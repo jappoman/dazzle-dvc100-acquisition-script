@@ -100,7 +100,7 @@ Esempio completo:
 ```powershell
 .\acquisisci-hi8-auto-stop.ps1 `
   -OutputDirectory "F:\Hi8" `
-  -MaxDuration "01:30:00" `
+  -MaxDuration "02:00:00" `
   -NoSignalDuration "00:00:45"
 ```
 
@@ -109,17 +109,17 @@ Parametri principali:
 | Parametro | Predefinito | Descrizione |
 | --- | --- | --- |
 | `OutputDirectory` | `F:\Hi8` | Cartella per MKV e log |
-| `MaxDuration` | 90 minuti | Durata massima |
+| `MaxDuration` | 2 ore | Durata massima |
 | `NoSignalDuration` | 45 secondi | Durata continua di nero o fermo immagine prima dello stop |
 | `RequireSilence` | `false` | Se impostato a `true`, richiede anche silenzio audio prima dello stop |
 | `NotifyOnCompletion` | `true` | Riproduce un avviso sonoro al termine o in caso di errore |
-| `NotificationRepeatCount` | `3` | Numero di avvisi sonori consecutivi (da 1 a 10) |
+| `NotificationRepeatCount` | `2` | Numero di avvisi sonori consecutivi (da 1 a 10) |
 | `SilenceThresholdDb` | `-45` | Soglia del silenzio |
 | `Crf` / `Preset` | `22` / `medium` | Qualità e velocità H.264 |
 
 Premi **Q** nella console per fermare manualmente e permettere a FFmpeg di finalizzare il file. Evita di chiudere PowerShell o terminare `ffmpeg` dal Task Manager.
 
-Al termine, lo script emette per impostazione predefinita tre avvisi sonori anche se PowerShell non è in primo piano. Per disattivarli, usa `-NotifyOnCompletion $false`; per aumentarli, ad esempio, usa `-NotificationRepeatCount 5`.
+Al termine, lo script emette per impostazione predefinita due avvisi sonori anche se PowerShell non è in primo piano. Per disattivarli, usa `-NotifyOnCompletion $false`; per aumentarli, ad esempio, usa `-NotificationRepeatCount 5`.
 
 ## Arresto automatico
 

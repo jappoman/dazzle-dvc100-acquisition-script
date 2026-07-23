@@ -2,7 +2,7 @@
 param(
     [string]$OutputDirectory = "F:\Hi8",
 
-    [TimeSpan]$MaxDuration = ([TimeSpan]::FromMinutes(90)),
+    [TimeSpan]$MaxDuration = ([TimeSpan]::FromHours(2)),
 
     [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromSeconds(45)),
 
@@ -11,7 +11,7 @@ param(
     [bool]$NotifyOnCompletion = $true,
 
     [ValidateRange(1, 10)]
-    [int]$NotificationRepeatCount = 3,
+    [int]$NotificationRepeatCount = 2,
 
     [double]$SilenceThresholdDb = -45,
 

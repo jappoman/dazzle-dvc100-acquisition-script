@@ -1,76 +1,149 @@
-# Dazzle DVC100 — procedura guidata, conservativa e fail-closed
+# Dazzle DVC100: driver e acquisizione Hi8
 
-Lo script gestisce esclusivamente la Dazzle `USB\VID_1B80&PID_E60A`:
+Procedura verificata per Windows 11 a 64 bit per installare correttamente la Dazzle DVC100 e acquisire nastri Hi8 da ingresso S-Video. Il repository contiene sia i driver necessari sia lo script PowerShell che crea un file video e interrompe l'acquisizione quando rileva assenza di segnale.
 
-- `USB\VID_1B80&PID_E60A&MI_00`: video;
-- `USB\VID_1B80&PID_E60A&MI_01`: audio.
+## Contenuto
 
-Il comportamento predefinito è sola diagnosi. Aprire PowerShell come amministratore ed eseguire:
+| Percorso | Scopo |
+| --- | --- |
+| `drivers/Dazzle Drivers/Dazzle Video Capture DVC100 X64 Driver 1.09.msi` | Pacchetto driver audio di base |
+| `drivers/usb-2828x-1176289/EMBDA_x86_x64.inf` | Driver video corretto per questa revisione hardware |
+| `acquisisci-hi8-auto-stop.ps1` | Acquisizione PAL con deinterlacciamento e arresto automatico |
 
-```powershell
-.\install-dazzle-dvc100.ps1
-```
+## Requisiti
 
-Per autorizzare la sequenza guidata realmente riparativa:
+- Windows 11 64 bit.
+- Dazzle DVC100 con ID hardware `USB\\VID_1B80&PID_E60A`.
+- [FFmpeg](https://ffmpeg.org/) disponibile nel `PATH` (`ffmpeg -version`).
+- Una sorgente Hi8 collegata alla Dazzle tramite **S-Video** e audio stereo.
+- PowerShell; sono necessari privilegi di amministratore solo per installare i driver.
 
-```powershell
-# Simulazione senza modifiche
-.\install-dazzle-dvc100.ps1 -Repair -WhatIf
+> Questa guida vale per `VID_1B80&PID_E60A`. Non usare `EMVIDEO.inf`: è destinato alla vecchia revisione `VID_2304&PID_021A`.
 
-# Riparazione guidata, con conferme e report di rollback
-.\install-dazzle-dvc100.ps1 -Repair
-```
+## Installazione dei driver
 
-Sono supportati anche `-CheckOnly`, `-DryRun`, `-SkipPrompt`, `-TimeoutSeconds` e `-LogPath`. `-RepairVideo` resta un alias compatibile di `-Repair`.
+1. Scollega la Dazzle.
+2. In Gestione dispositivi disinstalla soltanto eventuali periferiche Dazzle con questi ID:
+   - `USB\\VID_1B80&PID_E60A&MI_00` (video)
+   - `USB\\VID_1B80&PID_E60A&MI_01` (audio)
 
-## Pacchetti ispezionati
+   Se proposto, rimuovi anche il software driver. Non rimuovere il dispositivo USB composito generico né altre periferiche USB.
+3. Esegui come amministratore `drivers/Dazzle Drivers/Dazzle Video Capture DVC100 X64 Driver 1.09.msi` e completa l'installazione.
+4. Collega la Dazzle direttamente a una porta USB del PC e attendi circa 10 secondi.
+5. Apri PowerShell come amministratore dalla radice del repository ed esegui:
 
-Entrambi gli archivi locali vengono usati solo dal repository:
+   ```powershell
+   pnputil /add-driver ".\drivers\usb-2828x-1176289\EMBDA_x86_x64.inf" /install
+   pnputil /scan-devices
+   ```
 
-- `drivers\Dazzle Drivers.zip` contiene `DazzleDVC100.exe`, launcher InstallShield firmato Pinnacle v1.09, e `Dazzle Video Capture DVC100 X64 Driver 1.09.msi`, MSI firmato validamente da Centron Design e dichiarato come produttore Pinnacle.
-- Il ProductCode MSI è `{FB4B9EB9-68B2-4C42-8C38-B65F8FE5A5CA}`; l'UpgradeCode è `{34408E17-C98F-432C-8195-4F4CD532A383}`.
-- L'MSI contiene `Data1.cab`, azioni DIFx `ProcessDriverPackages` e `InstallDriverPackages`, e i componenti driver `EMAUDIO_x86_x64_INF` e `EMVIDEO_INF`.
-- `drivers\usb-2828x-1176289.zip` contiene `EMBDA_x86_x64.inf`, `emWHQL.cat`, `emBDA64.sys`, `emOEM64.sys` e `merlinFW.rom`. L'INF dichiara esattamente `USB\VID_1B80&PID_E60A&MI_00`.
+6. Verifica lo stato dei dispositivi:
 
-Il launcher EXE non espone opzioni silenziose determinabili con sicurezza. Quando il bootstrap è necessario, lo script apre quindi `DazzleDVC100.exe` in modalità **interattiva** e attende la sua chiusura: è il comportamento che riproduce la procedura manuale riuscita. Non viene usato `/reboot`. L'analisi statica dimostra che l'MSI installa pacchetti DIFx, ma non può dimostrare quale binding audio Windows sceglierà al runtime. Lo script **non cerca né inventa un INF audio alternativo**: esegue esclusivamente il bootstrap locale, osserva provider/versione/servizio/INF realmente associati a `MI_01` dopo il bootstrap e conserva esattamente quel binding.
+   ```powershell
+   Get-PnpDevice -PresentOnly |
+     Where-Object { $_.InstanceId -match 'VID_1B80&PID_E60A' } |
+     Format-Table Status, Class, FriendlyName, InstanceId -AutoSize
+   ```
 
-## Sequenza di riparazione
+   Il dispositivo video (`MI_00`), l'audio (`MI_01`) e il dispositivo USB composito devono avere stato `OK`.
+7. Verifica il driver video:
 
-Con `-Repair`, lo script:
+   ```powershell
+   Get-CimInstance Win32_PnPSignedDriver |
+     Where-Object { $_.DeviceID -like '*VID_1B80&PID_E60A&MI_00*' } |
+     Format-List DeviceName, DriverProviderName, DriverVersion, DriverDate, InfName
+   ```
 
-1. diagnostica entrambe le interfacce: status, problem code, friendly name, provider, versione/data, INF pubblicato, servizio, ClassGuid, hardware e compatible IDs;
-2. esegue il bootstrap solo se `MI_01` è assente/in errore oppure FFmpeg, quando disponibile, prova l'assenza dell'endpoint DirectShow audio;
-3. dopo il bootstrap esegue `pnputil /scan-devices`, richiede il ricollegamento se necessario, attende entrambe le interfacce e registra il binding audio ottenuto; `MI_01`, il suo INF e ogni endpoint audio non vengono mai rimossi, sostituiti o forzati;
-4. estrae EMBDA, verifica INF, catalogo firmato e file necessari, poi aggiunge/installla il pacchetto con `pnputil /add-driver "<INF>" /install`;
-5. se EMBDA non si associa, elimina il vecchio pacchetto video solo se è associato esattamente a `MI_00`, non è Microsoft e non è usato da alcun altro dispositivo; se il pacchetto è condiviso interrompe senza eliminarlo;
-6. chiede scollegamento/ricollegamento, effettua la scansione e verifica `MI_00` con EMBDA e `MI_01` ancora `OK` e associata allo stesso INF post-bootstrap.
+   Il risultato atteso riporta `Corel Corporation` e versione `5.2020.406.1015`. Il nome `oem*.inf` può variare.
 
-Al termine di un bootstrap o di una sostituzione driver, lo script non riavvia mai automaticamente il PC: richiede invece un riavvio manuale completo prima della prova audio finale.
+## Verifica con FFmpeg
 
-Se `MI_01` resta sul driver Pinnacle `emAudio` 5.2012.416.2725 e l'audio stuttera anche dopo il riavvio, il repository non contiene un INF audio compatibile alternativo. Lo script non ripete bootstrap, non rimuove l'audio e non tenta sostituzioni non validate: l'unica soluzione pratica è acquisire l'audio con un ingresso line-in o un'interfaccia USB audio separata e usare la Dazzle per il solo video.
-
-Se EMBDA si associa dopo lo staging, il vecchio INF video non viene eliminato. Se un controllo è ambiguo, incompleto o produce più risultati, il flusso si arresta senza rimozioni.
-
-## Vincoli di sicurezza
-
-Ogni modifica usa `SupportsShouldProcess` con `ConfirmImpact High`, presenta un piano e crea un report JSON accanto al log prima e dopo ogni modifica. Il report è storico e **non promette rollback automatico** se un pacchetto è stato eliminato dal Driver Store.
-
-Non vengono mai usati `/force`, wildcard con `/delete-driver`, modifiche al registro o agli INF, bcdedit, disabilitazione firma, `Disable-PnpDevice`, `Remove-PnpDevice`, rimozione del dispositivo composito, rimozione di `MI_01`, rimozione driver audio o riavvio automatico. `-SkipPrompt` da solo non elimina le conferme; l’unica combinazione non interattiva è `-SkipPrompt -Force`, che non rende comunque eliminabile un pacchetto condiviso.
-
-`-DryRun` riporta il dispositivo coinvolto, InstanceId, ID hardware, INF pubblicato, provider, versione, servizio e i comandi che sarebbero eseguiti. `-WhatIf` usa il meccanismo nativo PowerShell.
-
-## DirectShow e test PAL B
-
-Se `ffmpeg.exe` è nel `PATH`, lo script esegue:
+Elenca i dispositivi DirectShow:
 
 ```powershell
 ffmpeg -list_devices true -f dshow -i dummy
 ```
 
-Il risultato atteso è `Roxio Video Capture USB` e `Linea (Dazzle Video Capture USB Audio Device)`. Il FriendlyName PnP e il nome DirectShow possono differire, quindi il nome non è il solo criterio per il binding video. La verifica EMBDA accetta il binding effettivo `USB28xxBGA` con binario firmato `emBDA64.sys`, perché Windows può conservare metadati Pinnacle nel record PnP pubblicato dopo la sostituzione del pacchetto.
+Devono comparire:
 
-Per PAL B da S-Video il pin crossbar corretto è **2**:
+- `Roxio Video Capture USB`
+- `Linea (Dazzle Video Capture USB Audio Device)`
+
+L'errore finale relativo a `dummy` è normale. Per una preview video/audio:
 
 ```powershell
-ffplay -f dshow -crossbar_video_input_pin_number 2 -video_size 720x576 -framerate 25 -i "video=Roxio Video Capture USB:audio=Linea (Dazzle Video Capture USB Audio Device)" -vf "yadif=1:-1:0" -sync audio
+ffplay -f dshow -crossbar_video_input_pin_number 2 `
+  -video_size 720x576 -framerate 25 `
+  -i "video=Roxio Video Capture USB:audio=Linea (Dazzle Video Capture USB Audio Device)" `
+  -vf "yadif=1:-1:0" -sync audio
 ```
+
+## Acquisizione
+
+Lo script registra in MKV H.264/AAC, converte il PAL interlacciato 25 fps in progressivo 50 fps con YADIF e salva anche un log. L'output predefinito è `F:\Hi8`; la cartella viene creata se manca.
+
+Se necessario, abilita l'esecuzione soltanto per la sessione corrente:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Unblock-File .\acquisisci-hi8-auto-stop.ps1  # solo se Windows lo ha bloccato
+```
+
+Avvio standard:
+
+```powershell
+.\acquisisci-hi8-auto-stop.ps1
+```
+
+Esempio completo:
+
+```powershell
+.\acquisisci-hi8-auto-stop.ps1 `
+  -OutputDirectory "F:\Hi8" `
+  -MaxDuration "01:30:00" `
+  -NoSignalDuration "00:00:45"
+```
+
+Parametri principali:
+
+| Parametro | Predefinito | Descrizione |
+| --- | --- | --- |
+| `OutputDirectory` | `F:\Hi8` | Cartella per MKV e log |
+| `MaxDuration` | 90 minuti | Durata massima |
+| `NoSignalDuration` | 45 secondi | Durata continua di nero o fermo immagine prima dello stop |
+| `RequireSilence` | `false` | Se impostato a `true`, richiede anche silenzio audio prima dello stop |
+| `SilenceThresholdDb` | `-45` | Soglia del silenzio |
+| `Crf` / `Preset` | `22` / `medium` | Qualità e velocità H.264 |
+
+Premi **Q** nella console per fermare manualmente e permettere a FFmpeg di finalizzare il file. Evita di chiudere PowerShell o terminare `ffmpeg` dal Task Manager.
+
+## Arresto automatico
+
+Fin dall'inizio dell'acquisizione, lo script richiede lo stop quando rileva per la soglia impostata:
+
+- schermo nero **oppure** immagine congelata;
+- opzionalmente, anche audio silenzioso nello stesso intervallo (`-RequireSilence $true`).
+
+Il conteggio usa il tempo reale, non il timestamp del video codificato. Abilitare anche il silenzio riduce il rischio di fermare una scena nera o una ripresa statica legittima. Il limite massimo resta una protezione aggiuntiva.
+
+## File prodotto e controllo finale
+
+Il file ha dimensioni 768×576, pixel quadrati 4:3, 50 fps progressivi, video H.264 (`CRF 22`) e audio AAC stereo 128 kbps. Controllalo con VLC oppure:
+
+```powershell
+ffprobe -v error -show_entries format=duration,size `
+  -show_entries stream=index,codec_name,codec_type,width,height,r_frame_rate `
+  -of default=noprint_wrappers=1 "F:\Hi8\nome-file.mkv"
+```
+
+L'output atteso include video `h264` a `768x576`, `50/1`, e audio `aac`.
+
+## Problemi comuni
+
+- **Video nero:** conferma l'ingresso S-Video e il pin `-crossbar_video_input_pin_number 2`.
+- **`MI_00` in errore:** ripeti l'installazione di `EMBDA_x86_x64.inf`, poi esegui `pnputil /scan-devices`.
+- **Stop troppo precoce:** aumenta `NoSignalDuration` (ad esempio `00:01:30`).
+- **FFmpeg non trovato:** installalo e riapri PowerShell, quindi controlla con `ffmpeg -version`.
+- **Frame drop in crescita:** collega la Dazzle senza hub USB non alimentati e verifica carico CPU e spazio su disco.
+
+Durante l'acquisizione non scollegare Dazzle, videocamera o disco di destinazione e disattiva sospensione/ibernazione del PC.

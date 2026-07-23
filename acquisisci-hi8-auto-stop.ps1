@@ -8,6 +8,11 @@ param(
 
     [bool]$RequireSilence = $false,
 
+    [bool]$NotifyOnCompletion = $true,
+
+    [ValidateRange(1, 10)]
+    [int]$NotificationRepeatCount = 3,
+
     [double]$SilenceThresholdDb = -45,
 
     [string]$VideoDevice = "Roxio Video Capture USB",
@@ -66,18 +71,39 @@ function Quote-ProcessArgument {
     return '"' + $escaped + '"'
 }
 
-function Get-ElapsedSeconds {
+function Invoke-CompletionAlert {
     param(
-        [AllowNull()]
-        [object]$StartSeconds,
-        [double]$CurrentSeconds
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$Enabled,
+
+        [Parameter(Mandatory = $true)]
+        [int]$RepeatCount
     )
 
-    if ($null -eq $StartSeconds) {
-        return 0.0
+    if (-not $Enabled) {
+        return
     }
 
-    return [math]::Max(0.0, $CurrentSeconds - [double]$StartSeconds)
+    Write-Host "Avviso sonoro: $Message"
+
+    for ($index = 0; $index -lt $RepeatCount; $index++) {
+        try {
+            # Su Windows usa l'uscita audio di sistema: è udibile anche se la
+            # finestra PowerShell non è in primo piano.
+            [Console]::Beep(1100, 350)
+        }
+        catch {
+            [System.Media.SystemSounds]::Exclamation.Play()
+            Start-Sleep -Milliseconds 350
+        }
+
+        if ($index -lt ($RepeatCount - 1)) {
+            Start-Sleep -Milliseconds 200
+        }
+    }
 }
 
 if (-not (Test-CommandAvailable -Name "ffmpeg")) {
@@ -460,6 +486,11 @@ $exitCode = $process.ExitCode
 $process.Dispose()
 
 if ($exitCode -ne 0) {
+    Invoke-CompletionAlert `
+        -Message "Acquisizione terminata con errore" `
+        -Enabled $NotifyOnCompletion `
+        -RepeatCount $NotificationRepeatCount
+
     throw "ffmpeg è terminato con codice $exitCode. Controlla il log: $logFile"
 }
 
@@ -470,3 +501,8 @@ Write-Host $outputFile
 if ($stopReason) {
     Write-Host "Motivo arresto: $stopReason"
 }
+
+Invoke-CompletionAlert `
+    -Message "Acquisizione completata" `
+    -Enabled $NotifyOnCompletion `
+    -RepeatCount $NotificationRepeatCount

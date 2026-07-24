@@ -4,7 +4,7 @@ param(
 
     [TimeSpan]$MaxDuration = ([TimeSpan]::FromHours(2)),
 
-    [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromMinutes(1)),
+    [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromSeconds(45)),
 
     [bool]$RequireSilence = $false,
 

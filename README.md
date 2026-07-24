@@ -101,7 +101,7 @@ Esempio completo:
 .\acquisisci-hi8-auto-stop.ps1 `
   -OutputDirectory "F:\Hi8" `
   -MaxDuration "02:00:00" `
-  -NoSignalDuration "00:01:00"
+  -NoSignalDuration "00:00:45"
 ```
 
 Parametri principali:
@@ -110,7 +110,7 @@ Parametri principali:
 | --- | --- | --- |
 | `OutputDirectory` | `F:\Hi8` | Cartella per MKV e log |
 | `MaxDuration` | 2 ore | Durata massima |
-| `NoSignalDuration` | 1 minuto | Durata continua di nero o fermo immagine prima dello stop |
+| `NoSignalDuration` | 45 secondi | Durata continua di nero o fermo immagine prima dello stop |
 | `RequireSilence` | `false` | Se impostato a `true`, richiede anche silenzio audio prima dello stop |
 | `NotifyOnCompletion` | `true` | Riproduce un avviso sonoro al termine o in caso di errore |
 | `NotificationRepeatCount` | `2` | Numero di avvisi sonori consecutivi (da 1 a 10) |

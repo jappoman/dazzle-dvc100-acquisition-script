@@ -100,8 +100,11 @@ Esempio completo:
 ```powershell
 .\acquisisci-hi8-auto-stop.ps1 `
   -OutputDirectory "F:\Hi8" `
+  -TapeLabel "C17" `
+  -ContentDescription "Febbraio 2004 Carnevale" `
   -MaxDuration "02:00:00" `
-  -NoSignalDuration "00:00:45"
+  -NoSignalDuration "00:00:45" `
+  -ShutdownOnCompletion $true
 ```
 
 Parametri principali:
@@ -109,17 +112,32 @@ Parametri principali:
 | Parametro | Predefinito | Descrizione |
 | --- | --- | --- |
 | `OutputDirectory` | `F:\Hi8` | Cartella per MKV e log |
+| `TapeLabel` | vuoto | Codice aggiunto al nome di MKV e log, ad esempio ` - C17` |
+| `ContentDescription` | vuoto | Descrizione aggiunta dopo una tabulazione in `index.txt` |
 | `MaxDuration` | 2 ore | Durata massima |
 | `NoSignalDuration` | 45 secondi | Durata continua di nero o fermo immagine prima dello stop |
 | `RequireSilence` | `false` | Se impostato a `true`, richiede anche silenzio audio prima dello stop |
 | `NotifyOnCompletion` | `true` | Riproduce un avviso sonoro al termine o in caso di errore |
 | `NotificationRepeatCount` | `2` | Numero di avvisi sonori consecutivi (da 1 a 10) |
+| `ShutdownOnCompletion` | `false` | Programma lo spegnimento del PC dopo una conclusione riuscita |
 | `SilenceThresholdDb` | `-45` | Soglia del silenzio |
 | `Crf` / `Preset` | `22` / `medium` | Qualità e velocità H.264 |
 
 Premi **Q** nella console per fermare manualmente e permettere a FFmpeg di finalizzare il file. Evita di chiudere PowerShell o terminare `ffmpeg` dal Task Manager.
 
+Con `-TapeLabel "C17"`, il file viene chiamato ad esempio `acquisizione-hi8-2026-07-24_11-33-05 - C17.mkv`. Se non specifichi `TapeLabel`, nessun testo viene aggiunto al nome.
+
+Dopo ogni acquisizione completata correttamente, lo script aggiunge una riga a `index.txt` nella cartella di output, senza estensione del file. Con `-TapeLabel "C17" -ContentDescription "Febbraio 2004 Carnevale"`, la riga sarà:
+
+```text
+acquisizione-hi8-2026-07-24_11-33-05 - C17<TAB>Febbraio 2004 Carnevale
+```
+
+`<TAB>` indica un vero carattere di tabulazione. Se ometti `ContentDescription`, viene scritto solo il nome del file senza estensione. I vecchi nomi `Comment` e `IndexComment` restano utilizzabili come alias.
+
 Al termine, lo script emette per impostazione predefinita due avvisi sonori anche se PowerShell non è in primo piano. Per disattivarli, usa `-NotifyOnCompletion $false`; per aumentarli, ad esempio, usa `-NotificationRepeatCount 5`.
+
+Per spegnere il PC al termine, aggiungi `-ShutdownOnCompletion $true`. Lo spegnimento è programmato 30 secondi dopo la finalizzazione del file; se necessario puoi annullarlo con `shutdown /a`. In caso di errore di FFmpeg il PC non viene spento.
 
 ## Arresto automatico
 

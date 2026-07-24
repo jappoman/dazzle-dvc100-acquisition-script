@@ -2,6 +2,14 @@
 param(
     [string]$OutputDirectory = "F:\Hi8",
 
+    [Alias("Comment")]
+    [AllowEmptyString()]
+    [string]$TapeLabel = "",
+
+    [Alias("IndexComment")]
+    [AllowEmptyString()]
+    [string]$ContentDescription = "",
+
     [TimeSpan]$MaxDuration = ([TimeSpan]::FromHours(2)),
 
     [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromSeconds(45)),
@@ -12,6 +20,8 @@ param(
 
     [ValidateRange(1, 10)]
     [int]$NotificationRepeatCount = 2,
+
+    [bool]$ShutdownOnCompletion = $false,
 
     [double]$SilenceThresholdDb = -45,
 
@@ -106,6 +116,67 @@ function Invoke-CompletionAlert {
     }
 }
 
+function Get-TapeLabelSuffix {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $trimmedValue = $Value.Trim()
+
+    if ([string]::IsNullOrWhiteSpace($trimmedValue)) {
+        return ""
+    }
+
+    if ($trimmedValue.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+        throw "TapeLabel contiene caratteri non validi per un nome file Windows."
+    }
+
+    return " - $trimmedValue"
+}
+
+function Add-IndexEntry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$IndexFile,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileBaseName,
+
+        [AllowEmptyString()]
+        [string]$Description
+    )
+
+    $trimmedDescription = $Description.Trim()
+
+    if ($trimmedDescription -match '[\r\n\t]') {
+        throw "ContentDescription non può contenere tabulazioni o ritorni a capo."
+    }
+
+    $entry = $FileBaseName
+
+    if (-not [string]::IsNullOrWhiteSpace($trimmedDescription)) {
+        $entry += "`t$trimmedDescription"
+    }
+
+    Add-Content -LiteralPath $IndexFile -Value $entry -Encoding UTF8
+    return $entry
+}
+
+function Request-ComputerShutdown {
+    Write-Host "Spegnimento del PC programmato tra 30 secondi. Per annullare: shutdown /a"
+
+    Start-Process `
+        -FilePath (Join-Path $env:SystemRoot "System32\shutdown.exe") `
+        -ArgumentList @(
+            "/s"
+            "/t"
+            "30"
+            "/c"
+            "Acquisizione Hi8 completata"
+        )
+}
+
 if (-not (Test-CommandAvailable -Name "ffmpeg")) {
     throw "ffmpeg non è disponibile nel PATH."
 }
@@ -133,8 +204,10 @@ if (-not $outputDirectoryItem.PSIsContainer) {
 }
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-$outputFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp.mkv"
-$logFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp.log"
+$tapeLabelSuffix = Get-TapeLabelSuffix -Value $TapeLabel
+$outputFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp$tapeLabelSuffix.mkv"
+$logFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp$tapeLabelSuffix.log"
+$indexFile = Join-Path $outputDirectoryItem.FullName "index.txt"
 
 $videoFilter = @(
     "yadif=1:-1:0"
@@ -235,9 +308,13 @@ Write-Host "Video: $VideoDevice"
 Write-Host "Audio: $AudioDevice"
 Write-Host "Output: $outputFile"
 Write-Host "Log: $logFile"
+if ($tapeLabelSuffix) {
+    Write-Host "Etichetta cassetta: $TapeLabel"
+}
 Write-Host "Durata massima: $MaxDuration"
 Write-Host "Arresto automatico dopo: $NoSignalDuration"
 Write-Host "Richiede anche silenzio: $RequireSilence"
+Write-Host "Spegne il PC al termine: $ShutdownOnCompletion"
 Write-Host ""
 Write-Host "Condizione di arresto:"
 Write-Host "schermo nero oppure immagine congelata per la soglia impostata"
@@ -502,7 +579,19 @@ if ($stopReason) {
     Write-Host "Motivo arresto: $stopReason"
 }
 
+$indexEntry = Add-IndexEntry `
+    -IndexFile $indexFile `
+    -FileBaseName ([IO.Path]::GetFileNameWithoutExtension($outputFile)) `
+    -Description $ContentDescription
+
+Write-Host "Indice aggiornato: $indexFile"
+Write-Host "Voce indice: $indexEntry"
+
 Invoke-CompletionAlert `
     -Message "Acquisizione completata" `
     -Enabled $NotifyOnCompletion `
     -RepeatCount $NotificationRepeatCount
+
+if ($ShutdownOnCompletion) {
+    Request-ComputerShutdown
+}

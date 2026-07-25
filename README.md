@@ -1,43 +1,75 @@
-# Dazzle DVC100: driver e acquisizione Hi8
+# Dazzle DVC100 Hi8 Capture for Windows 11
 
-Procedura verificata per Windows 11 a 64 bit per installare correttamente la Dazzle DVC100 e acquisire nastri Hi8 da ingresso S-Video. Il repository contiene sia i driver necessari sia lo script PowerShell che crea un file video e interrompe l'acquisizione quando rileva assenza di segnale.
+Capture PAL Hi8 tapes from a Dazzle DVC100 on Windows 11 x64. This repository
+contains the known-working driver packages and a PowerShell capture script that
+writes a high-quality MKV file, a log, and a searchable tape index. It can stop
+the capture automatically after a continuous black screen or frozen picture.
 
-## Contenuto
+## What is included
 
-| Percorso | Scopo |
+| Path | Purpose |
 | --- | --- |
-| `drivers/Dazzle Drivers/Dazzle Video Capture DVC100 X64 Driver 1.09.msi` | Pacchetto driver audio di base |
-| `drivers/usb-2828x-1176289/EMBDA_x86_x64.inf` | Driver video corretto per questa revisione hardware |
-| `acquisisci-hi8-auto-stop.ps1` | Acquisizione PAL con deinterlacciamento e arresto automatico |
+| `capture-hi8.ps1` | PAL capture, deinterlacing, automatic stop, index update, and optional computer shutdown |
+| `drivers/Dazzle Drivers.zip` | Driver installer archive; contains `Dazzle Video Capture DVC100 X64 Driver 1.09.msi` |
+| `drivers/usb-2828x-1176289.zip` | Video driver archive; contains `EMBDA_x86_x64.inf` |
 
-## Requisiti
+The files inside the supplied vendor archives retain their original names. Do
+not rename the `.msi`, `.inf`, `.sys`, or `.cat` files after extracting them.
 
-- Windows 11 64 bit.
-- Dazzle DVC100 con ID hardware `USB\\VID_1B80&PID_E60A`.
-- [FFmpeg](https://ffmpeg.org/) disponibile nel `PATH` (`ffmpeg -version`).
-- Una sorgente Hi8 collegata alla Dazzle tramite **S-Video** e audio stereo.
-- PowerShell; sono necessari privilegi di amministratore solo per installare i driver.
+### Driver sources
 
-> Questa guida vale per `VID_1B80&PID_E60A`. Non usare `EMVIDEO.inf`: è destinato alla vecchia revisione `VID_2304&PID_021A`.
+The archives deliberately retain their original download names, making them
+easier to locate or verify online. The installer archive (`Dazzle Drivers.zip`)
+was obtained from the [VideoHelp Dazzle DVC100 discussion](https://forum.videohelp.com/threads/398965-Dazzle-DVC100-not-capturing-anymore-on-Windows-10#post2603674).
+The video-driver archive (`usb-2828x-1176289.zip`) was obtained from the
+[DriverIdentifier Dazzle video-device driver page](https://www.driveridentifier.com/scan/dazzle-video-capture-usb-video-device-driver/driver-detail/440EF39A8C51443ABDF94C39458120B4/4721701/15b9d95803ef0a6cef210fd7cd28007c/790176020/USB-VID_1B80%26PID_E60A%26MI_00).
 
-## Installazione dei driver
+## Requirements
 
-1. Scollega la Dazzle.
-2. In Gestione dispositivi disinstalla soltanto eventuali periferiche Dazzle con questi ID:
-   - `USB\\VID_1B80&PID_E60A&MI_00` (video)
-   - `USB\\VID_1B80&PID_E60A&MI_01` (audio)
+- Windows 11 64-bit.
+- Dazzle DVC100 with hardware ID `USB\VID_1B80&PID_E60A`.
+- A Hi8 camera/player connected by **S-Video** and stereo audio.
+- [FFmpeg](https://ffmpeg.org/) available on `PATH`; verify with `ffmpeg -version`.
+- Sufficient free space on the destination drive (approximately 6.3 Mb/s with
+  the default settings, or about 2.8 GB per hour).
 
-   Se proposto, rimuovi anche il software driver. Non rimuovere il dispositivo USB composito generico né altre periferiche USB.
-3. Esegui come amministratore `drivers/Dazzle Drivers/Dazzle Video Capture DVC100 X64 Driver 1.09.msi` e completa l'installazione.
-4. Collega la Dazzle direttamente a una porta USB del PC e attendi circa 10 secondi.
-5. Apri PowerShell come amministratore dalla radice del repository ed esegui:
+Administrator rights are required only to remove/install drivers. A normal
+PowerShell session is sufficient for capturing and for scheduling shutdown.
+
+> [!IMPORTANT]
+> These driver instructions apply only to `VID_1B80&PID_E60A`. Do not install
+> `EMVIDEO.inf` for this hardware revision: it belongs to the older
+> `VID_2304&PID_021A` revision.
+
+## Windows 11 x64 driver installation
+
+Follow this order exactly. Connect the Dazzle directly to the computer rather
+than through an unpowered USB hub.
+
+1. Disconnect the Dazzle from USB.
+2. Open **Device Manager** as an administrator. If previous Dazzle drivers are
+   present, uninstall only devices whose IDs start with one of these values:
+
+   - `USB\VID_1B80&PID_E60A&MI_00` — video interface
+   - `USB\VID_1B80&PID_E60A&MI_01` — audio interface
+
+   Select **Attempt to remove the driver for this device** if Windows offers it.
+   Do not remove an unrelated USB device or the generic USB Composite Device.
+3. Extract `drivers/Dazzle Drivers.zip` to a temporary folder.
+   Right-click `Dazzle Video Capture DVC100 X64 Driver 1.09.msi`, choose
+   **Run as administrator**, and complete the installer.
+4. Connect the Dazzle directly to a USB port and wait about 10 seconds.
+5. Extract `drivers/usb-2828x-1176289.zip` to a temporary folder.
+   Open **PowerShell as administrator**, replace `$videoDriverFolder` with that
+   extracted folder, then install the video INF:
 
    ```powershell
-   pnputil /add-driver ".\drivers\usb-2828x-1176289\EMBDA_x86_x64.inf" /install
+$videoDriverFolder = 'C:\Temp\usb-2828x-1176289'
+   pnputil /add-driver "$videoDriverFolder\EMBDA_x86_x64.inf" /install
    pnputil /scan-devices
    ```
 
-6. Verifica lo stato dei dispositivi:
+6. Confirm that the Dazzle interfaces are working:
 
    ```powershell
    Get-PnpDevice -PresentOnly |
@@ -45,8 +77,9 @@ Procedura verificata per Windows 11 a 64 bit per installare correttamente la Daz
      Format-Table Status, Class, FriendlyName, InstanceId -AutoSize
    ```
 
-   Il dispositivo video (`MI_00`), l'audio (`MI_01`) e il dispositivo USB composito devono avere stato `OK`.
-7. Verifica il driver video:
+   The `MI_00` video interface, `MI_01` audio interface, and USB composite
+   device should report `OK`.
+7. Confirm the video-driver binding:
 
    ```powershell
    Get-CimInstance Win32_PnPSignedDriver |
@@ -54,118 +87,155 @@ Procedura verificata per Windows 11 a 64 bit per installare correttamente la Daz
      Format-List DeviceName, DriverProviderName, DriverVersion, DriverDate, InfName
    ```
 
-   Il risultato atteso riporta `Corel Corporation` e versione `5.2020.406.1015`. Il nome `oem*.inf` può variare.
+   On the tested hardware, this reports `Corel Corporation`, driver version
+   `5.2020.406.1015`, and a Windows-assigned `oem*.inf` name. The exact INF
+   name is not significant.
 
-## Verifica con FFmpeg
+## Verify the capture devices
 
-Elenca i dispositivi DirectShow:
+List DirectShow devices:
 
 ```powershell
 ffmpeg -list_devices true -f dshow -i dummy
 ```
 
-Devono comparire:
+The expected device names are:
 
 - `Roxio Video Capture USB`
-- `Linea (Dazzle Video Capture USB Audio Device)`
+- `Line (Dazzle Video Capture USB Audio Device)`
 
-L'errore finale relativo a `dummy` è normale. Per una preview video/audio:
+The final error mentioning `dummy` is expected. If your device names differ,
+pass them through `-VideoDevice` and `-AudioDevice`.
+
+For a video/audio preview:
 
 ```powershell
 ffplay -f dshow -crossbar_video_input_pin_number 2 `
   -video_size 720x576 -framerate 25 `
-  -i "video=Roxio Video Capture USB:audio=Linea (Dazzle Video Capture USB Audio Device)" `
+  -i "video=Roxio Video Capture USB:audio=Line (Dazzle Video Capture USB Audio Device)" `
   -vf "yadif=1:-1:0" -sync audio
 ```
 
-## Acquisizione
+## Capture a tape
 
-Lo script registra in MKV H.264/AAC, converte il PAL interlacciato 25 fps in progressivo 50 fps con YADIF e salva anche un log. L'output predefinito è `F:\Hi8`; la cartella viene creata se manca.
-
-Se necessario, abilita l'esecuzione soltanto per la sessione corrente:
+If Windows blocks local scripts, enable execution for this PowerShell session
+only:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-Unblock-File .\acquisisci-hi8-auto-stop.ps1  # solo se Windows lo ha bloccato
+Unblock-File .\capture-hi8.ps1  # only if the file is blocked
 ```
 
-Avvio standard:
+Start a capture with all defaults:
 
 ```powershell
-.\acquisisci-hi8-auto-stop.ps1
+.\capture-hi8.ps1
 ```
 
-Esempio completo:
+Example with tape metadata and automatic shutdown:
 
 ```powershell
-.\acquisisci-hi8-auto-stop.ps1 `
-  -OutputDirectory "F:\Hi8" `
-  -TapeLabel "C17" `
-  -ContentDescription "Febbraio 2004 Carnevale" `
-  -MaxDuration "02:00:00" `
-  -NoSignalDuration "00:00:45" `
+.\capture-hi8.ps1 `
+  -TapeLabel 'C32' `
+  -ContentDescription 'Kenya, March 2001' `
+  -MaxDuration '02:00:00' `
+  -NoSignalDuration '00:00:45' `
   -ShutdownOnCompletion $true
 ```
 
-Parametri principali:
+Press **Q** in the console to stop cleanly and let FFmpeg finalize the file.
+Do not close PowerShell or end `ffmpeg` from Task Manager while a capture is in
+progress.
 
-| Parametro | Predefinito | Descrizione |
+### Parameters and defaults
+
+All output locations are parameters. With no arguments, the script creates
+`F:\Hi8` if needed, then writes the MKV, log, and `index.txt` there. A custom
+log directory or index-file path is created automatically when its parent
+directory does not already exist.
+
+| Parameter | Default | Description |
 | --- | --- | --- |
-| `OutputDirectory` | `F:\Hi8` | Cartella per MKV e log |
-| `TapeLabel` | vuoto | Codice aggiunto al nome di MKV e log, ad esempio ` - C17` |
-| `ContentDescription` | vuoto | Descrizione aggiunta dopo una tabulazione in `index.txt` |
-| `MaxDuration` | 2 ore | Durata massima |
-| `NoSignalDuration` | 45 secondi | Durata continua di nero o fermo immagine prima dello stop |
-| `RequireSilence` | `false` | Se impostato a `true`, richiede anche silenzio audio prima dello stop |
-| `NotifyOnCompletion` | `true` | Riproduce un avviso sonoro al termine o in caso di errore |
-| `NotificationRepeatCount` | `2` | Numero di avvisi sonori consecutivi (da 1 a 10) |
-| `ShutdownOnCompletion` | `false` | Programma lo spegnimento del PC dopo una conclusione riuscita |
-| `SilenceThresholdDb` | `-45` | Soglia del silenzio |
-| `Crf` / `Preset` | `22` / `medium` | Qualità e velocità H.264 |
+| `OutputDirectory` | `F:\Hi8` | Destination directory for the MKV, log, and `index.txt`. Created if absent. |
+| `LogDirectory` | empty (uses `OutputDirectory`) | Directory for capture log files. Created if absent. |
+| `IndexFile` | empty (uses `OutputDirectory\index.txt`) | File path for the capture index. Its parent directory is created if absent. |
+| `TapeLabel` | empty | Optional label added to the MKV and log names, for example ` - C32`. Must be valid in a Windows file name. `Comment` is a backwards-compatible alias. |
+| `ContentDescription` | empty | Optional index description. It follows the filename after a tab character; tabs and line breaks are rejected. `IndexComment` is a backwards-compatible alias. |
+| `MaxDuration` | `02:00:00` | Hard upper limit for the capture. Must be greater than zero. |
+| `NoSignalDuration` | `00:00:45` | Continuous black/frozen-picture time before automatic stop. Minimum: 20 seconds. |
+| `RequireSilence` | `$false` | When `$true`, automatic stop also requires silent audio for the same duration. |
+| `NotifyOnCompletion` | `$true` | Plays audible completion/error alerts. |
+| `NotificationRepeatCount` | `2` | Number of alerts, from 1 through 10. |
+| `ShutdownOnCompletion` | `$false` | Schedules a shutdown 30 seconds after a successful capture. Applications are force-closed; cancel with `shutdown /a`. |
+| `SilenceThresholdDb` | `-45` | Audio level below which FFmpeg considers the input silent. Must be negative. |
+| `VideoDevice` | `Roxio Video Capture USB` | DirectShow video device name. |
+| `AudioDevice` | `Line (Dazzle Video Capture USB Audio Device)` | DirectShow audio device name. |
+| `CrossbarPin` | `2` | DirectShow crossbar input pin for S-Video. |
+| `Crf` | `22` | H.264 quality level, from 0 (highest quality/largest files) to 51. |
+| `Preset` | `medium` | x264 encoding preset: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, or `veryslow`. |
 
-Premi **Q** nella console per fermare manualmente e permettere a FFmpeg di finalizzare il file. Evita di chiudere PowerShell o terminare `ffmpeg` dal Task Manager.
-
-Con `-TapeLabel "C17"`, il file viene chiamato ad esempio `acquisizione-hi8-2026-07-24_11-33-05 - C17.mkv`. Se non specifichi `TapeLabel`, nessun testo viene aggiunto al nome.
-
-Dopo ogni acquisizione completata correttamente, lo script aggiunge una riga a `index.txt` nella cartella di output, senza estensione del file. Con `-TapeLabel "C17" -ContentDescription "Febbraio 2004 Carnevale"`, la riga sarà:
+The output filename uses this form:
 
 ```text
-acquisizione-hi8-2026-07-24_11-33-05 - C17<TAB>Febbraio 2004 Carnevale
+hi8-capture-YYYY-MM-DD_HH-mm-ss - TapeLabel.mkv
 ```
 
-`<TAB>` indica un vero carattere di tabulazione. Se ometti `ContentDescription`, viene scritto solo il nome del file senza estensione. I vecchi nomi `Comment` e `IndexComment` restano utilizzabili come alias.
+For example, a capture with `-TapeLabel 'C32'` produces
+`hi8-capture-2026-07-25_01-26-29 - C32.mkv` and a matching `.log` file. Each
+successful capture also adds an entry to `index.txt`, such as:
 
-Al termine, lo script emette per impostazione predefinita due avvisi sonori anche se PowerShell non è in primo piano. Per disattivarli, usa `-NotifyOnCompletion $false`; per aumentarli, ad esempio, usa `-NotificationRepeatCount 5`.
+```text
+hi8-capture-2026-07-25_01-26-29 - C32    Kenya, March 2001
+```
 
-Per spegnere il PC al termine, aggiungi `-ShutdownOnCompletion $true`. Lo spegnimento è programmato 30 secondi dopo la finalizzazione del file; se necessario puoi annullarlo con `shutdown /a`. Le applicazioni aperte vengono chiuse forzatamente, quindi salva prima eventuale lavoro non correlato. In caso di errore di FFmpeg il PC non viene spento.
+There is a real tab between the filename and description. If no description is
+provided, the index contains only the filename without the extension.
 
-## Arresto automatico
+## Automatic stopping
 
-Fin dall'inizio dell'acquisizione, lo script richiede lo stop quando rileva per la soglia impostata:
+From the beginning of the capture, the script stops after the configured
+duration when it detects either:
 
-- schermo nero **oppure** immagine congelata;
-- opzionalmente, anche audio silenzioso nello stesso intervallo (`-RequireSilence $true`).
+- a continuous black screen; or
+- a continuous frozen picture.
 
-Il conteggio usa il tempo reale, non il timestamp del video codificato. Abilitare anche il silenzio riduce il rischio di fermare una scena nera o una ripresa statica legittima. Il limite massimo resta una protezione aggiuntiva.
+With `-RequireSilence $true`, the audio must also be silent for the same
+duration. This reduces the chance of stopping during an intentional black or
+static scene. `MaxDuration` always remains a separate safety limit.
 
-## File prodotto e controllo finale
+## Output format and validation
 
-Il file ha dimensioni 768×576, pixel quadrati 4:3, 50 fps progressivi, video H.264 (`CRF 22`) e audio AAC stereo 128 kbps. Controllalo con VLC oppure:
+The default output is a Matroska (`.mkv`) file with H.264 video and AAC stereo
+audio. PAL input is deinterlaced from 25 interlaced fps to 50 progressive fps,
+scaled to 768×576 with square pixels (4:3).
+
+Validate a finished file with:
 
 ```powershell
 ffprobe -v error -show_entries format=duration,size `
   -show_entries stream=index,codec_name,codec_type,width,height,r_frame_rate `
-  -of default=noprint_wrappers=1 "F:\Hi8\nome-file.mkv"
+  -of default=noprint_wrappers=1 'F:\Hi8\hi8-capture-example.mkv'
 ```
 
-L'output atteso include video `h264` a `768x576`, `50/1`, e audio `aac`.
+Expected video properties include `h264`, `768x576`, and `50/1`; the audio
+codec is `aac`.
 
-## Problemi comuni
+## Troubleshooting
 
-- **Video nero:** conferma l'ingresso S-Video e il pin `-crossbar_video_input_pin_number 2`.
-- **`MI_00` in errore:** ripeti l'installazione di `EMBDA_x86_x64.inf`, poi esegui `pnputil /scan-devices`.
-- **Stop troppo precoce:** aumenta `NoSignalDuration` (ad esempio `00:01:30`).
-- **FFmpeg non trovato:** installalo e riapri PowerShell, quindi controlla con `ffmpeg -version`.
-- **Frame drop in crescita:** collega la Dazzle senza hub USB non alimentati e verifica carico CPU e spazio su disco.
+- **No video or black video:** verify the S-Video connection and use
+  `-CrossbarPin 2`.
+- **Video interface (`MI_00`) has an error:** repeat the video-driver INF
+  installation, then run `pnputil /scan-devices`.
+- **Device name not found:** run the DirectShow device-list command and pass
+  the displayed values to `-VideoDevice` and `-AudioDevice`.
+- **Automatic stop occurs too early:** increase `-NoSignalDuration`, for
+  example to `00:01:30`, or enable `-RequireSilence $true`.
+- **FFmpeg is not found:** install FFmpeg, reopen PowerShell, and run
+  `ffmpeg -version`.
+- **Increasing dropped frames:** avoid unpowered USB hubs; check CPU use, USB
+  bandwidth, and free space on the output drive.
+- **The computer does not shut down:** verify no one ran `shutdown /a`; the
+  script now reports a failure from `shutdown.exe` instead of silently ignoring it.
 
-Durante l'acquisizione non scollegare Dazzle, videocamera o disco di destinazione e disattiva sospensione/ibernazione del PC.
+Do not disconnect the Dazzle, camera/player, or output drive during capture.
+Disable sleep and hibernation for long tape transfers.

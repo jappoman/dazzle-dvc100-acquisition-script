@@ -2,6 +2,12 @@
 param(
     [string]$OutputDirectory = "F:\Hi8",
 
+    [AllowEmptyString()]
+    [string]$LogDirectory = "",
+
+    [AllowEmptyString()]
+    [string]$IndexFile = "",
+
     [Alias("Comment")]
     [AllowEmptyString()]
     [string]$TapeLabel = "",
@@ -27,7 +33,7 @@ param(
 
     [string]$VideoDevice = "Roxio Video Capture USB",
 
-    [string]$AudioDevice = "Linea (Dazzle Video Capture USB Audio Device)",
+    [string]$AudioDevice = "Line (Dazzle Video Capture USB Audio Device)",
 
     [int]$CrossbarPin = 2,
 
@@ -97,12 +103,12 @@ function Invoke-CompletionAlert {
         return
     }
 
-    Write-Host "Avviso sonoro: $Message"
+    Write-Host "Audible alert: $Message"
 
     for ($index = 0; $index -lt $RepeatCount; $index++) {
         try {
-            # Su Windows usa l'uscita audio di sistema: è udibile anche se la
-            # finestra PowerShell non è in primo piano.
+            # Uses the Windows system audio output, so the alert remains audible
+            # even when the PowerShell window is not in the foreground.
             [Console]::Beep(1100, 350)
         }
         catch {
@@ -129,7 +135,7 @@ function Get-TapeLabelSuffix {
     }
 
     if ($trimmedValue.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
-        throw "TapeLabel contiene caratteri non validi per un nome file Windows."
+        throw "TapeLabel contains characters that are not valid in a Windows file name."
     }
 
     return " - $trimmedValue"
@@ -150,7 +156,7 @@ function Add-IndexEntry {
     $trimmedDescription = $Description.Trim()
 
     if ($trimmedDescription -match '[\r\n\t]') {
-        throw "ContentDescription non può contenere tabulazioni o ritorni a capo."
+        throw "ContentDescription cannot contain tabs or line breaks."
     }
 
     $entry = $FileBaseName
@@ -159,9 +165,8 @@ function Add-IndexEntry {
         $entry += "`t$trimmedDescription"
     }
 
-    # Un indice creato/modificato da altri strumenti può non terminare con una
-    # nuova riga. In quel caso Add-Content accoderebbe la nuova voce alla riga
-    # precedente, rendendo entrambe difficili da leggere e cercare.
+    # An index created or edited by another program may not end in a newline.
+    # Without one, Add-Content would merge this entry with the previous entry.
     if ((Test-Path -LiteralPath $IndexFile) -and ((Get-Item -LiteralPath $IndexFile).Length -gt 0)) {
         $lastByte = [IO.File]::ReadAllBytes($IndexFile)[-1]
         if ($lastByte -ne 10) {
@@ -174,7 +179,7 @@ function Add-IndexEntry {
 }
 
 function Request-ComputerShutdown {
-    Write-Host "Spegnimento del PC programmato tra 30 secondi. Per annullare: shutdown /a"
+    Write-Host "Computer shutdown scheduled in 30 seconds. To cancel: shutdown /a"
 
     $shutdownProcess = Start-Process `
         -FilePath (Join-Path $env:SystemRoot "System32\shutdown.exe") `
@@ -184,30 +189,30 @@ function Request-ComputerShutdown {
             "30"
             "/f"
             "/c"
-            "Acquisizione Hi8 completata"
+            "Hi8 capture completed"
         ) `
         -Wait `
         -PassThru
 
     if ($shutdownProcess.ExitCode -ne 0) {
-        throw "Impossibile programmare lo spegnimento del PC (shutdown.exe ha restituito $($shutdownProcess.ExitCode))."
+        throw "Unable to schedule computer shutdown (shutdown.exe returned $($shutdownProcess.ExitCode))."
     }
 }
 
 if (-not (Test-CommandAvailable -Name "ffmpeg")) {
-    throw "ffmpeg non è disponibile nel PATH."
+    throw "ffmpeg is not available on PATH."
 }
 
 if ($MaxDuration -le [TimeSpan]::Zero) {
-    throw "MaxDuration deve essere maggiore di zero."
+    throw "MaxDuration must be greater than zero."
 }
 
 if ($NoSignalDuration -lt [TimeSpan]::FromSeconds(20)) {
-    throw "NoSignalDuration deve essere di almeno 20 secondi per evitare arresti accidentali."
+    throw "NoSignalDuration must be at least 20 seconds to prevent accidental stops."
 }
 
 if ($SilenceThresholdDb -gt 0) {
-    throw "SilenceThresholdDb deve essere negativo, per esempio -45."
+    throw "SilenceThresholdDb must be negative, for example -45."
 }
 
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
@@ -217,14 +222,43 @@ if (-not (Test-Path -LiteralPath $OutputDirectory)) {
 $outputDirectoryItem = Get-Item -LiteralPath $OutputDirectory
 
 if (-not $outputDirectoryItem.PSIsContainer) {
-    throw "Il percorso di output non è una cartella: $OutputDirectory"
+    throw "Output path is not a directory: $OutputDirectory"
+}
+
+if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
+    $LogDirectory = $outputDirectoryItem.FullName
+}
+
+if (-not (Test-Path -LiteralPath $LogDirectory)) {
+    New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+}
+
+$logDirectoryItem = Get-Item -LiteralPath $LogDirectory
+
+if (-not $logDirectoryItem.PSIsContainer) {
+    throw "Log path is not a directory: $LogDirectory"
+}
+
+if ([string]::IsNullOrWhiteSpace($IndexFile)) {
+    $IndexFile = Join-Path $outputDirectoryItem.FullName "index.txt"
+}
+else {
+    $IndexFile = [IO.Path]::GetFullPath($IndexFile)
+    $indexDirectory = Split-Path -Path $IndexFile -Parent
+
+    if (-not (Test-Path -LiteralPath $indexDirectory)) {
+        New-Item -ItemType Directory -Path $indexDirectory -Force | Out-Null
+    }
+
+    if (-not (Get-Item -LiteralPath $indexDirectory).PSIsContainer) {
+        throw "Index-file parent path is not a directory: $indexDirectory"
+    }
 }
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $tapeLabelSuffix = Get-TapeLabelSuffix -Value $TapeLabel
-$outputFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp$tapeLabelSuffix.mkv"
-$logFile = Join-Path $outputDirectoryItem.FullName "acquisizione-hi8-$timestamp$tapeLabelSuffix.log"
-$indexFile = Join-Path $outputDirectoryItem.FullName "index.txt"
+$outputFile = Join-Path $outputDirectoryItem.FullName "hi8-capture-$timestamp$tapeLabelSuffix.mkv"
+$logFile = Join-Path $logDirectoryItem.FullName "hi8-capture-$timestamp$tapeLabelSuffix.log"
 
 $videoFilter = @(
     "yadif=1:-1:0"
@@ -232,9 +266,9 @@ $videoFilter = @(
     "setsar=1"
 ) -join ","
 
-# blackdetect annuncia un intervallo solo quando il nero termina: non può
-# quindi arrestare una sorgente che resta nera. Analizziamo un frame al
-# secondo su un ramo separato, senza rallentare il video registrato.
+# blackdetect reports an interval only after black ends, so it cannot stop a
+# source that remains black. A separate branch analyses one frame per second
+# without slowing down the recorded video.
 $detectionFilter = @(
     "fps=1"
     "blackframe=98:32"
@@ -320,35 +354,35 @@ $process = New-Object System.Diagnostics.Process
 $process.StartInfo = $startInfo
 
 Write-Host ""
-Write-Host "Acquisizione Hi8"
+Write-Host "Hi8 Capture"
 Write-Host "Video: $VideoDevice"
 Write-Host "Audio: $AudioDevice"
 Write-Host "Output: $outputFile"
 Write-Host "Log: $logFile"
 if ($tapeLabelSuffix) {
-    Write-Host "Etichetta cassetta: $TapeLabel"
+    Write-Host "Tape label: $TapeLabel"
 }
-Write-Host "Durata massima: $MaxDuration"
-Write-Host "Arresto automatico dopo: $NoSignalDuration"
-Write-Host "Richiede anche silenzio: $RequireSilence"
-Write-Host "Spegne il PC al termine: $ShutdownOnCompletion"
+Write-Host "Maximum duration: $MaxDuration"
+Write-Host "Automatic stop after: $NoSignalDuration"
+Write-Host "Also require silence: $RequireSilence"
+Write-Host "Shut down computer on completion: $ShutdownOnCompletion"
 Write-Host ""
-Write-Host "Condizione di arresto:"
-Write-Host "schermo nero oppure immagine congelata per la soglia impostata"
+Write-Host "Stop condition:"
+Write-Host "black screen or frozen image for the configured threshold"
 if ($RequireSilence) {
-    Write-Host "e contemporaneamente audio silenzioso per la stessa soglia."
+    Write-Host "and silent audio for the same threshold."
 }
 Write-Host ""
-Write-Host "Premi Q per interrompere correttamente l'acquisizione."
+Write-Host "Press Q to stop the capture cleanly."
 Write-Host ""
 
-# Crea il log prima di avviare ffmpeg. Se il dispositivo rifiuta subito la
-# connessione, il processo può terminare prima che il ciclo di monitoraggio
-# legga stderr; in quel caso il log deve comunque conservare l'errore.
+# Create the log before starting ffmpeg. If the device immediately rejects the
+# connection, the process may exit before the monitoring loop reads stderr;
+# the log must still retain the startup error.
 New-Item -ItemType File -Path $logFile -Force | Out-Null
 
 if (-not $process.Start()) {
-    throw "Impossibile avviare ffmpeg."
+    throw "Unable to start ffmpeg."
 }
 
 $stdoutTask = $process.StandardOutput.ReadLineAsync()
@@ -438,14 +472,14 @@ try {
         }
 
         if ($manualStop -and -not $stopSent) {
-            $stopReason = "interruzione manuale"
+            $stopReason = "manual stop"
         }
 
         $now = [DateTime]::UtcNow
         $currentSeconds = ($now - $captureStartedAt).TotalSeconds
 
-        # blackframe emette una riga ogni secondo solo durante il nero.
-        # Se non arriva più una riga, il video non è più nero.
+        # blackframe writes one line per second only while the image is black.
+        # If no more lines arrive, the video is no longer black.
         if (
             $null -ne $blackLastSeenAt -and
             ($now - $blackLastSeenAt).TotalSeconds -gt 2.5
@@ -486,7 +520,7 @@ try {
         )
 
         if (-not $stopReason -and $currentSeconds -ge $MaxDuration.TotalSeconds) {
-            $stopReason = "durata massima raggiunta"
+            $stopReason = "maximum duration reached"
         }
 
         if (
@@ -495,20 +529,20 @@ try {
             $audioNoSignal
         ) {
             if ($blackElapsed -ge $NoSignalDuration.TotalSeconds) {
-                $stopReason = "schermo nero continuo"
+                $stopReason = "continuous black screen"
             }
             else {
-                $stopReason = "immagine congelata continua"
+                $stopReason = "continuous frozen image"
             }
 
             if ($RequireSilence) {
-                $stopReason += " con audio silenzioso"
+                $stopReason += " with silent audio"
             }
         }
 
         if ($stopReason -and -not $stopSent) {
             Write-Host ""
-            Write-Host "Arresto richiesto: $stopReason"
+            Write-Host "Stop requested: $stopReason"
             $process.StandardInput.WriteLine("q")
             $process.StandardInput.Flush()
             $stopSent = $true
@@ -518,9 +552,9 @@ try {
             $elapsed = [TimeSpan]::FromSeconds($currentSeconds)
 
             Write-Progress `
-                -Activity "Acquisizione Hi8" `
+                -Activity "Hi8 Capture" `
                 -Status (
-                    "Tempo reale {0} | Nero {1:N0}s | Freeze {2:N0}s | Silenzio {3:N0}s" -f `
+                    "Wall time {0} | Black {1:N0}s | Freeze {2:N0}s | Silence {3:N0}s" -f `
                     $elapsed.ToString("hh\:mm\:ss"), `
                     $blackElapsed, `
                     $freezeElapsed, `
@@ -542,7 +576,7 @@ try {
     $process.WaitForExit()
 }
 finally {
-    Write-Progress -Activity "Acquisizione Hi8" -Completed
+    Write-Progress -Activity "Hi8 Capture" -Completed
 
     if (-not $process.HasExited) {
         try {
@@ -550,18 +584,18 @@ finally {
             $process.StandardInput.Flush()
 
             if (-not $process.WaitForExit(10000)) {
-                Write-Warning "ffmpeg non si è chiuso entro 10 secondi."
+                Write-Warning "ffmpeg did not exit within 10 seconds."
             }
         }
         catch {
-            Write-Warning "Impossibile richiedere la chiusura ordinata di ffmpeg."
+            Write-Warning "Unable to request a clean ffmpeg shutdown."
         }
     }
 }
 
-# Il processo può terminare prima del primo giro del ciclo. Attendi l'ultima
-# lettura asincrona e svuota stderr per non perdere l'errore di avvio di
-# DirectShow (per esempio, dispositivo gia' in uso).
+# The process can exit before the first monitoring-loop iteration. Await the
+# final asynchronous read and drain stderr so that a DirectShow startup error
+# (for example, a device already in use) is not lost.
 if (-not $stderrTask.IsCompleted) {
     $stderrTask.Wait()
 }
@@ -581,19 +615,19 @@ $process.Dispose()
 
 if ($exitCode -ne 0) {
     Invoke-CompletionAlert `
-        -Message "Acquisizione terminata con errore" `
+        -Message "Capture ended with an error" `
         -Enabled $NotifyOnCompletion `
         -RepeatCount $NotificationRepeatCount
 
-    throw "ffmpeg è terminato con codice $exitCode. Controlla il log: $logFile"
+    throw "ffmpeg exited with code $exitCode. Check the log: $logFile"
 }
 
 Write-Host ""
-Write-Host "Acquisizione completata:"
+Write-Host "Capture completed:"
 Write-Host $outputFile
 
 if ($stopReason) {
-    Write-Host "Motivo arresto: $stopReason"
+    Write-Host "Stop reason: $stopReason"
 }
 
 $indexEntry = Add-IndexEntry `
@@ -601,11 +635,11 @@ $indexEntry = Add-IndexEntry `
     -FileBaseName ([IO.Path]::GetFileNameWithoutExtension($outputFile)) `
     -Description $ContentDescription
 
-Write-Host "Indice aggiornato: $indexFile"
-Write-Host "Voce indice: $indexEntry"
+Write-Host "Index updated: $indexFile"
+Write-Host "Index entry: $indexEntry"
 
 Invoke-CompletionAlert `
-    -Message "Acquisizione completata" `
+    -Message "Capture completed" `
     -Enabled $NotifyOnCompletion `
     -RepeatCount $NotificationRepeatCount
 

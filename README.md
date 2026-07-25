@@ -156,16 +156,17 @@ Press **Q** in the console to stop cleanly and let FFmpeg finalize the file.
 Do not close PowerShell or end `ffmpeg` from Task Manager while a capture is in
 progress.
 
-While recording, PowerShell updates the progress display once per second with
-the recorded duration, output-file size, and a simple signal status. `Signal
-OK` means no potential capture problem has been detected. A `Check:` status is
-shown only for black/frozen video, required silence, FFmpeg dropped frames, or
-DirectShow buffer warnings. This keeps the transfer view actionable; encoding
-FPS, speed, bitrate, frame totals, and duplicate frames are diagnostic details
-rather than normal monitoring information. `FFmpeg drops` is a
-synchronization/encoding counter and is not necessarily a hardware loss
-reported by the Dazzle. Device warnings are counted separately when DirectShow
-reports a full real-time buffer or frame drop in its log output.
+While recording, PowerShell updates the progress display once per second. `Wall`
+is the real elapsed capture time and advances independently of FFmpeg's progress
+reports. `Encoded` is the duration reported by FFmpeg and can trail by a few
+seconds while frames are buffered or encoded. The display also shows encoded
+frames, encoding FPS, speed, bitrate, output size, duplicated/dropped frames,
+DirectShow buffer warnings, and black/frozen/silent-signal timers. The black and
+freeze timers are always visible: they remain at `0s` with a normal signal and
+increase only while a condition is detected. `Drop` is FFmpeg's
+synchronization/encoding counter; it is not necessarily a hardware loss reported
+by the Dazzle. Device warnings are counted separately when DirectShow reports a
+full real-time buffer or frame drop in its log output.
 
 ### Parameters and defaults
 

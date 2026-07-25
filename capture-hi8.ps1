@@ -616,45 +616,28 @@ try {
         }
 
         if (((Get-Date) - $lastConsoleUpdate).TotalSeconds -ge 1) {
-            $captureHealth = New-Object System.Collections.Generic.List[string]
-
-            # Keep the live display focused on whether the transfer is safe.
-            # Encoding speed, bitrate, frame totals, and duplicate frames do not
-            # help an operator decide whether to intervene during a normal capture.
-            if ($blackElapsed -gt 0) {
-                $captureHealth.Add(("black {0:N0}s" -f $blackElapsed))
-            }
-
-            if ($freezeElapsed -gt 0) {
-                $captureHealth.Add(("frozen image {0:N0}s" -f $freezeElapsed))
-            }
-
-            if ($RequireSilence -and $silenceElapsed -gt 0) {
-                $captureHealth.Add(("silence {0:N0}s" -f $silenceElapsed))
-            }
-
-            if ($droppedFrames -gt 0) {
-                $captureHealth.Add(("FFmpeg drops $droppedFrames"))
-            }
-
-            if ($deviceWarningCount -gt 0) {
-                $captureHealth.Add(("device warnings $deviceWarningCount"))
-            }
-
-            $healthStatus = if ($captureHealth.Count -eq 0) {
-                "Signal OK"
-            }
-            else {
-                "Check: " + ($captureHealth -join ", ")
-            }
+            # Wall time advances independently of FFmpeg's periodic progress
+            # report. Keep it first so the operator sees the real capture time
+            # immediately; "Encoded" may legitimately trail by a few seconds.
+            $elapsed = [TimeSpan]::FromSeconds($currentSeconds)
 
             Write-Progress `
                 -Activity "Hi8 Capture" `
                 -Status (
-                    "Recorded {0} | File {1} | {2}" -f `
+                    "Wall {0} | Encoded {1} | {2:N0} frames | Encode {3:N1} fps | Speed {4} | Bitrate {5} | File {6} | Dup {7} | Drop {8} | Device warnings {9} | Black {10:N0}s | Freeze {11:N0}s | Silence {12:N0}s" -f `
+                    $elapsed.ToString("hh\:mm\:ss"), `
                     ([TimeSpan]::FromSeconds($encodedSeconds)).ToString("hh\:mm\:ss"), `
+                    $encodedFrames, `
+                    $encodingFps, `
+                    $encodingSpeed, `
+                    $outputBitrate, `
                     (Format-ByteSize -Bytes $outputBytes), `
-                    $healthStatus
+                    $duplicatedFrames, `
+                    $droppedFrames, `
+                    $deviceWarningCount, `
+                    $blackElapsed, `
+                    $freezeElapsed, `
+                    $silenceElapsed
                 ) `
                 -PercentComplete (
                     [math]::Min(

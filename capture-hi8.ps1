@@ -33,7 +33,8 @@ param(
 
     [string]$VideoDevice = "Roxio Video Capture USB",
 
-    [string]$AudioDevice = "Line (Dazzle Video Capture USB Audio Device)",
+    # Exact DirectShow name exposed by the tested Italian Dazzle driver.
+    [string]$AudioDevice = "Linea (Dazzle Video Capture USB Audio Device)",
 
     [int]$CrossbarPin = 2,
 

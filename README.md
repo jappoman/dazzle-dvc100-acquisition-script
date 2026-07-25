@@ -36,6 +36,13 @@ The video-driver archive (`usb-2828x-1176289.zip`) was obtained from the
 Administrator rights are required only to remove/install drivers. A normal
 PowerShell session is sufficient for capturing and for scheduling shutdown.
 
+> [!NOTE]
+> The script defaults were tested with the Italian Windows 11 Dazzle-driver
+> installation described below. In that installation, DirectShow exposes the
+> audio input exactly as `Linea (Dazzle Video Capture USB Audio Device)`.
+> This is a device name supplied by the driver, not text translated by the
+> script: do not replace `Linea` with `Line` on that Italian installation.
+
 > [!IMPORTANT]
 > These driver instructions apply only to `VID_1B80&PID_E60A`. Do not install
 > `EMVIDEO.inf` for this hardware revision: it belongs to the older
@@ -102,17 +109,19 @@ ffmpeg -list_devices true -f dshow -i dummy
 The expected device names are:
 
 - `Roxio Video Capture USB`
-- `Line (Dazzle Video Capture USB Audio Device)`
+- `Linea (Dazzle Video Capture USB Audio Device)`
 
 The final error mentioning `dummy` is expected. If your device names differ,
-pass them through `-VideoDevice` and `-AudioDevice`.
+pass them through `-VideoDevice` and `-AudioDevice`. The first word of the
+audio device can be localized by Windows; for example, an English Windows
+installation may display `Line (Dazzle Video Capture USB Audio Device)`.
 
 For a video/audio preview:
 
 ```powershell
 ffplay -f dshow -crossbar_video_input_pin_number 2 `
   -video_size 720x576 -framerate 25 `
-  -i "video=Roxio Video Capture USB:audio=Line (Dazzle Video Capture USB Audio Device)" `
+  -i "video=Roxio Video Capture USB:audio=Linea (Dazzle Video Capture USB Audio Device)" `
   -vf "yadif=1:-1:0" -sync audio
 ```
 
@@ -169,7 +178,7 @@ directory does not already exist.
 | `ShutdownOnCompletion` | `$false` | Schedules a shutdown 30 seconds after a successful capture. Applications are force-closed; cancel with `shutdown /a`. |
 | `SilenceThresholdDb` | `-45` | Audio level below which FFmpeg considers the input silent. Must be negative. |
 | `VideoDevice` | `Roxio Video Capture USB` | DirectShow video device name. |
-| `AudioDevice` | `Line (Dazzle Video Capture USB Audio Device)` | DirectShow audio device name. |
+| `AudioDevice` | `Linea (Dazzle Video Capture USB Audio Device)` | DirectShow audio device name on the tested Italian Windows installation. It may be localized; use the name shown by FFmpeg on other systems. |
 | `CrossbarPin` | `2` | DirectShow crossbar input pin for S-Video. |
 | `Crf` | `22` | H.264 quality level, from 0 (highest quality/largest files) to 51. |
 | `Preset` | `medium` | x264 encoding preset: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, or `veryslow`. |
@@ -228,6 +237,9 @@ codec is `aac`.
   installation, then run `pnputil /scan-devices`.
 - **Device name not found:** run the DirectShow device-list command and pass
   the displayed values to `-VideoDevice` and `-AudioDevice`.
+- **Audio device `Line (...)` is not found on Italian Windows:** use the
+  default `Linea (Dazzle Video Capture USB Audio Device)` name. The script is
+  already configured with that exact default.
 - **Automatic stop occurs too early:** increase `-NoSignalDuration`, for
   example to `00:01:30`, or enable `-RequireSilence $true`.
 - **FFmpeg is not found:** install FFmpeg, reopen PowerShell, and run

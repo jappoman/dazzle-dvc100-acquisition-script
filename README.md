@@ -156,6 +156,14 @@ Press **Q** in the console to stop cleanly and let FFmpeg finalize the file.
 Do not close PowerShell or end `ffmpeg` from Task Manager while a capture is in
 progress.
 
+While recording, PowerShell updates the progress display once per second with
+the captured duration, encoded frames, encoding FPS, speed, bitrate, output
+size, duplicated/dropped frames, DirectShow buffer warnings, and black/frozen/
+silent-signal timers. `Drop` is FFmpeg's synchronization/encoding counter; it
+is not necessarily a hardware loss reported by the Dazzle. Device warnings are
+counted separately when DirectShow reports a full real-time buffer or frame
+drop in its log output.
+
 ### Parameters and defaults
 
 All output locations are parameters. With no arguments, the script creates

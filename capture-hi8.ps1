@@ -70,6 +70,27 @@ function Convert-ToFfmpegTime {
         $Value.Milliseconds
 }
 
+function Format-ByteSize {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Int64]$Bytes
+    )
+
+    if ($Bytes -ge 1GB) {
+        return "{0:N2} GB" -f ($Bytes / 1GB)
+    }
+
+    if ($Bytes -ge 1MB) {
+        return "{0:N1} MB" -f ($Bytes / 1MB)
+    }
+
+    if ($Bytes -ge 1KB) {
+        return "{0:N0} KB" -f ($Bytes / 1KB)
+    }
+
+    return "$Bytes B"
+}
+
 function Quote-ProcessArgument {
     param(
         [Parameter(Mandatory = $true)]
@@ -391,6 +412,14 @@ $stderrTask = $process.StandardError.ReadLineAsync()
 
 $captureStartedAt = [DateTime]::UtcNow
 $encodedSeconds = 0.0
+$encodedFrames = [Int64]0
+$encodingFps = 0.0
+$outputBytes = [Int64]0
+$outputBitrate = "N/A"
+$encodingSpeed = "N/A"
+$duplicatedFrames = [Int64]0
+$droppedFrames = [Int64]0
+$deviceWarningCount = 0
 $blackStart = $null
 $blackLastSeenAt = $null
 $freezeStart = $null
@@ -411,6 +440,37 @@ try {
                     if ([TimeSpan]::TryParse($Matches.value, [ref]$parsed)) {
                         $encodedSeconds = $parsed.TotalSeconds
                     }
+                }
+
+                if ($line -match '^frame=(?<value>\d+)$') {
+                    $encodedFrames = [Int64]$Matches.value
+                }
+
+                if ($line -match '^fps=(?<value>\d+(?:\.\d+)?)$') {
+                    $encodingFps = [double]::Parse(
+                        $Matches.value,
+                        [Globalization.CultureInfo]::InvariantCulture
+                    )
+                }
+
+                if ($line -match '^total_size=(?<value>\d+)$') {
+                    $outputBytes = [Int64]$Matches.value
+                }
+
+                if ($line -match '^bitrate=(?<value>.+)$') {
+                    $outputBitrate = $Matches.value.Trim()
+                }
+
+                if ($line -match '^speed=(?<value>.+)$') {
+                    $encodingSpeed = $Matches.value.Trim()
+                }
+
+                if ($line -match '^dup_frames=(?<value>\d+)$') {
+                    $duplicatedFrames = [Int64]$Matches.value
+                }
+
+                if ($line -match '^drop_frames=(?<value>\d+)$') {
+                    $droppedFrames = [Int64]$Matches.value
                 }
 
                 $stdoutTask = $process.StandardOutput.ReadLineAsync()
@@ -451,6 +511,12 @@ try {
 
                 if ($line -match '(?i)\b(error|fatal)\b') {
                     Write-Warning $line
+                }
+
+                # DirectShow has no structured hardware-drop counter. Keep
+                # source/buffer warnings separate from FFmpeg sync drops.
+                if ($line -match '(?i)(real-time buffer.*too full|buffer.*too full|dropp(?:ed|ing).*frames?)') {
+                    $deviceWarningCount++
                 }
 
                 $stderrTask = $process.StandardError.ReadLineAsync()
@@ -555,8 +621,17 @@ try {
             Write-Progress `
                 -Activity "Hi8 Capture" `
                 -Status (
-                    "Wall time {0} | Black {1:N0}s | Freeze {2:N0}s | Silence {3:N0}s" -f `
+                    "Wall {0} | Captured {1} | {2:N0} frames | Encode {3:N1} fps | Speed {4} | Bitrate {5} | Size {6} | Dup {7} | Drop {8} | Device warnings {9} | Black {10:N0}s | Freeze {11:N0}s | Silence {12:N0}s" -f `
                     $elapsed.ToString("hh\:mm\:ss"), `
+                    ([TimeSpan]::FromSeconds($encodedSeconds)).ToString("hh\:mm\:ss"), `
+                    $encodedFrames, `
+                    $encodingFps, `
+                    $encodingSpeed, `
+                    $outputBitrate, `
+                    (Format-ByteSize -Bytes $outputBytes), `
+                    $duplicatedFrames, `
+                    $droppedFrames, `
+                    $deviceWarningCount, `
                     $blackElapsed, `
                     $freezeElapsed, `
                     $silenceElapsed

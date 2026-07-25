@@ -137,7 +137,7 @@ acquisizione-hi8-2026-07-24_11-33-05 - C17<TAB>Febbraio 2004 Carnevale
 
 Al termine, lo script emette per impostazione predefinita due avvisi sonori anche se PowerShell non è in primo piano. Per disattivarli, usa `-NotifyOnCompletion $false`; per aumentarli, ad esempio, usa `-NotificationRepeatCount 5`.
 
-Per spegnere il PC al termine, aggiungi `-ShutdownOnCompletion $true`. Lo spegnimento è programmato 30 secondi dopo la finalizzazione del file; se necessario puoi annullarlo con `shutdown /a`. In caso di errore di FFmpeg il PC non viene spento.
+Per spegnere il PC al termine, aggiungi `-ShutdownOnCompletion $true`. Lo spegnimento è programmato 30 secondi dopo la finalizzazione del file; se necessario puoi annullarlo con `shutdown /a`. Le applicazioni aperte vengono chiuse forzatamente, quindi salva prima eventuale lavoro non correlato. In caso di errore di FFmpeg il PC non viene spento.
 
 ## Arresto automatico
 

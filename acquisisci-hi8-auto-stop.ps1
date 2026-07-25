@@ -159,6 +159,16 @@ function Add-IndexEntry {
         $entry += "`t$trimmedDescription"
     }
 
+    # Un indice creato/modificato da altri strumenti può non terminare con una
+    # nuova riga. In quel caso Add-Content accoderebbe la nuova voce alla riga
+    # precedente, rendendo entrambe difficili da leggere e cercare.
+    if ((Test-Path -LiteralPath $IndexFile) -and ((Get-Item -LiteralPath $IndexFile).Length -gt 0)) {
+        $lastByte = [IO.File]::ReadAllBytes($IndexFile)[-1]
+        if ($lastByte -ne 10) {
+            Add-Content -LiteralPath $IndexFile -Value "" -Encoding UTF8
+        }
+    }
+
     Add-Content -LiteralPath $IndexFile -Value $entry -Encoding UTF8
     return $entry
 }
@@ -166,15 +176,22 @@ function Add-IndexEntry {
 function Request-ComputerShutdown {
     Write-Host "Spegnimento del PC programmato tra 30 secondi. Per annullare: shutdown /a"
 
-    Start-Process `
+    $shutdownProcess = Start-Process `
         -FilePath (Join-Path $env:SystemRoot "System32\shutdown.exe") `
         -ArgumentList @(
             "/s"
             "/t"
             "30"
+            "/f"
             "/c"
             "Acquisizione Hi8 completata"
-        )
+        ) `
+        -Wait `
+        -PassThru
+
+    if ($shutdownProcess.ExitCode -ne 0) {
+        throw "Impossibile programmare lo spegnimento del PC (shutdown.exe ha restituito $($shutdownProcess.ExitCode))."
+    }
 }
 
 if (-not (Test-CommandAvailable -Name "ffmpeg")) {

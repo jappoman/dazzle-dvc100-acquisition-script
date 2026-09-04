@@ -3,13 +3,15 @@
 Capture PAL Hi8 tapes from a Dazzle DVC100 on Windows 11 x64. This repository
 contains the known-working driver packages and a PowerShell capture script that
 writes a high-quality MKV file, a log, and a searchable tape index. It can stop
-the capture automatically after a continuous black screen or frozen picture.
+the capture automatically after two continuous minutes of black/frozen and
+silent audio.
 
 ## What is included
 
 | Path | Purpose |
 | --- | --- |
 | `capture-hi8.ps1` | PAL capture, deinterlacing, automatic stop, index update, and optional computer shutdown |
+| `audit-hi8.ps1` | Read-only audit of captured MKVs: stream/decode integrity, capture grouping, duration, and final-black-tail check |
 | `drivers/Dazzle Drivers.zip` | Driver installer archive; contains `Dazzle Video Capture DVC100 X64 Driver 1.09.msi` |
 | `drivers/usb-2828x-1176289.zip` | Video driver archive; contains `EMBDA_x86_x64.inf` |
 
@@ -148,7 +150,7 @@ Example with tape metadata and automatic shutdown:
   -TapeLabel 'C32' `
   -ContentDescription 'Kenya, March 2001' `
   -MaxDuration '02:00:00' `
-  -NoSignalDuration '00:00:45' `
+  -NoSignalDuration '00:02:00' `
   -ShutdownOnCompletion $true
 ```
 
@@ -183,8 +185,8 @@ directory does not already exist.
 | `TapeLabel` | empty | Optional label added to the MKV and log names, for example ` - C32`. Must be valid in a Windows file name. `Comment` is a backwards-compatible alias. |
 | `ContentDescription` | empty | Optional index description. It follows the filename after a tab character; tabs and line breaks are rejected. `IndexComment` is a backwards-compatible alias. |
 | `MaxDuration` | `02:00:00` | Hard upper limit for the capture. Must be greater than zero. |
-| `NoSignalDuration` | `00:00:45` | Continuous black/frozen-picture time before automatic stop. Minimum: 20 seconds. |
-| `RequireSilence` | `$false` | When `$true`, automatic stop also requires silent audio for the same duration. |
+| `NoSignalDuration` | `00:02:00` | Continuous black/frozen-picture time before automatic stop. Minimum: 20 seconds. |
+| `RequireSilence` | `$true` | Automatic stop requires silent audio for the same duration as the black/frozen picture. |
 | `NotifyOnCompletion` | `$true` | Plays audible completion/error alerts. |
 | `NotificationRepeatCount` | `2` | Number of alerts, from 1 through 10. |
 | `ShutdownOnCompletion` | `$false` | Schedules a shutdown 30 seconds after a successful capture. Applications are force-closed; cancel with `shutdown /a`. |
@@ -215,14 +217,16 @@ provided, the index contains only the filename without the extension.
 ## Automatic stopping
 
 From the beginning of the capture, the script stops after the configured
-duration when it detects either:
+two-minute duration when it detects either:
 
 - a continuous black screen; or
 - a continuous frozen picture.
 
-With `-RequireSilence $true`, the audio must also be silent for the same
-duration. This reduces the chance of stopping during an intentional black or
-static scene. `MaxDuration` always remains a separate safety limit.
+By default, the audio must also be silent for the same duration. This reduces
+the chance of stopping during an intentional black or static scene.
+`MaxDuration` always remains a separate safety limit. Pass
+`-RequireSilence $false` only when a black/frozen picture alone should stop a
+capture.
 
 ## Output format and validation
 
@@ -241,6 +245,41 @@ ffprobe -v error -show_entries format=duration,size `
 Expected video properties include `h264`, `768x576`, and `50/1`; the audio
 codec is `aac`.
 
+## Audit an existing Hi8 folder
+
+`audit-hi8.ps1` never changes or re-encodes an MKV. It reads `index.txt`,
+groups multiple files belonging to the same tape (for example a resumed C10
+capture), measures the real durations with `ffprobe`, checks whether each
+final file ends with the expected black tail, and writes an Excel-friendly CSV
+summary.
+
+Run it from the repository while the capture drive is connected:
+
+```powershell
+.\audit-hi8.ps1 -InputDirectory 'F:\Hi8'
+```
+
+It creates `F:\Hi8\hi8-audit.csv` (one row per tape) and
+`F:\Hi8\hi8-audit.captures.csv` (one row per MKV). By default it also does a
+full decode of every file; this is read-only but can take several hours for a
+large collection. For a faster first pass, skip that part:
+
+```powershell
+.\audit-hi8.ps1 -InputDirectory 'F:\Hi8' -SkipDecodeCheck
+```
+
+`OK` means the grouped capture is at least 50 minutes long and its final file
+has at least 40 seconds of black at the end. `CHECK_SHORT` means only that the
+tape is short and merits a quick physical end-of-tape check; it does not prove
+anything was lost. `CHECK_END` means the expected final black tail was not
+found. `SPLIT_CAPTURE` marks a tape with more than one file, so resumed C10
+and C22 captures are clear in the report. Adjust the two thresholds when
+needed with `-MinimumExpectedDurationMinutes` and
+`-ExpectedBlackTailSeconds`.
+
+To generate a SHA-256 manifest of the masters at the same time (an additional
+full read of every MKV), add `-CreateHashes`.
+
 ## Troubleshooting
 
 - **No video or black video:** verify the S-Video connection and use
@@ -253,7 +292,8 @@ codec is `aac`.
   default `Linea (Dazzle Video Capture USB Audio Device)` name. The script is
   already configured with that exact default.
 - **Automatic stop occurs too early:** increase `-NoSignalDuration`, for
-  example to `00:01:30`, or enable `-RequireSilence $true`.
+  example to `00:03:00`. The default already requires two minutes of both
+  no-video and silent audio.
 - **FFmpeg is not found:** install FFmpeg, reopen PowerShell, and run
   `ffmpeg -version`.
 - **Increasing dropped frames:** avoid unpowered USB hubs; check CPU use, USB

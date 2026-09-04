@@ -18,9 +18,9 @@ param(
 
     [TimeSpan]$MaxDuration = ([TimeSpan]::FromHours(2)),
 
-    [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromSeconds(45)),
+    [TimeSpan]$NoSignalDuration = ([TimeSpan]::FromMinutes(2)),
 
-    [bool]$RequireSilence = $false,
+    [bool]$RequireSilence = $true,
 
     [bool]$NotifyOnCompletion = $true,
 

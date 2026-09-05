@@ -190,7 +190,7 @@ directory does not already exist.
 | `NotifyOnCompletion` | `$true` | Plays audible completion/error alerts. |
 | `NotificationRepeatCount` | `2` | Number of alerts, from 1 through 10. |
 | `ShutdownOnCompletion` | `$false` | Schedules a shutdown 30 seconds after a successful capture. Applications are force-closed; cancel with `shutdown /a`. |
-| `SilenceThresholdDb` | `-45` | Audio level below which FFmpeg considers the input silent. Must be negative. |
+| `SilenceThresholdDb` | `-20` | Audio level below which FFmpeg considers the input silent. The analogue-friendly default treats the Dazzle's steady no-signal noise as silence. Must be negative. |
 | `VideoDevice` | `Roxio Video Capture USB` | DirectShow video device name. |
 | `AudioDevice` | `Linea (Dazzle Video Capture USB Audio Device)` | DirectShow audio device name on the tested Italian Windows installation. It may be localized; use the name shown by FFmpeg on other systems. |
 | `CrossbarPin` | `2` | DirectShow crossbar input pin for S-Video. |

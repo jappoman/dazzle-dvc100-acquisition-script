@@ -29,7 +29,10 @@ param(
 
     [bool]$ShutdownOnCompletion = $false,
 
-    [double]$SilenceThresholdDb = -45,
+    # Analogue no-signal noise from the Dazzle is commonly around -25 dB.
+    # -20 dB treats that steady noise as silent while retaining normal video
+    # soundtrack peaks, which are typically much louder.
+    [double]$SilenceThresholdDb = -20,
 
     [string]$VideoDevice = "Roxio Video Capture USB",
 
@@ -234,7 +237,7 @@ if ($NoSignalDuration -lt [TimeSpan]::FromSeconds(20)) {
 }
 
 if ($SilenceThresholdDb -gt 0) {
-    throw "SilenceThresholdDb must be negative, for example -45."
+    throw "SilenceThresholdDb must be negative, for example -20."
 }
 
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {

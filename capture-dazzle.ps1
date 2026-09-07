@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$OutputDirectory = "F:\Hi8",
+    [string]$OutputDirectory = "F:\DazzleCapture\master",
 
     [AllowEmptyString()]
     [string]$LogDirectory = "",
@@ -214,7 +214,7 @@ function Request-ComputerShutdown {
             "30"
             "/f"
             "/c"
-            "Hi8 capture completed"
+            "Dazzle capture completed"
         ) `
         -Wait `
         -PassThru
@@ -282,8 +282,8 @@ else {
 
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $tapeLabelSuffix = Get-TapeLabelSuffix -Value $TapeLabel
-$outputFile = Join-Path $outputDirectoryItem.FullName "hi8-capture-$timestamp$tapeLabelSuffix.mkv"
-$logFile = Join-Path $logDirectoryItem.FullName "hi8-capture-$timestamp$tapeLabelSuffix.log"
+$outputFile = Join-Path $outputDirectoryItem.FullName "dazzle-capture-$timestamp$tapeLabelSuffix.mkv"
+$logFile = Join-Path $logDirectoryItem.FullName "dazzle-capture-$timestamp$tapeLabelSuffix.log"
 
 $videoFilter = @(
     "yadif=1:-1:0"
@@ -379,7 +379,7 @@ $process = New-Object System.Diagnostics.Process
 $process.StartInfo = $startInfo
 
 Write-Host ""
-Write-Host "Hi8 Capture"
+Write-Host "Dazzle Capture"
 Write-Host "Video: $VideoDevice"
 Write-Host "Audio: $AudioDevice"
 Write-Host "Output: $outputFile"
@@ -625,7 +625,7 @@ try {
             $elapsed = [TimeSpan]::FromSeconds($currentSeconds)
 
             Write-Progress `
-                -Activity "Hi8 Capture" `
+                -Activity "Dazzle Capture" `
                 -Status (
                     "Wall {0} | Encoded {1} | {2:N0} frames | Encode {3:N1} fps | Speed {4} | Bitrate {5} | File {6} | Dup {7} | Drop {8} | Device warnings {9} | Black {10:N0}s | Freeze {11:N0}s | Silence {12:N0}s" -f `
                     $elapsed.ToString("hh\:mm\:ss"), `
@@ -658,7 +658,7 @@ try {
     $process.WaitForExit()
 }
 finally {
-    Write-Progress -Activity "Hi8 Capture" -Completed
+    Write-Progress -Activity "Dazzle Capture" -Completed
 
     if (-not $process.HasExited) {
         try {

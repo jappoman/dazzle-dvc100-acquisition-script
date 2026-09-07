@@ -1,1 +1,8 @@
-/test-capture
+# Locally generated capture/finalisation output (when a test directory is used
+# inside the repository).
+/test-capture/
+/finalizzati/
+/*.mkv
+/*.log
+/index.txt
+/catalogo-cassette.csv

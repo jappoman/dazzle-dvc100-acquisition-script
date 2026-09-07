@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$OutputDirectory = "F:\DazzleCapture\master",
 
@@ -38,6 +38,11 @@ param(
 
     # Exact DirectShow name exposed by the tested Italian Dazzle driver.
     [string]$AudioDevice = "Linea (Dazzle Video Capture USB Audio Device)",
+
+    # Use Left or Right when a mono tape is present only on one captured channel.
+    # The selected source channel is duplicated to both output channels.
+    [ValidateSet("None", "Left", "Right")]
+    [string]$MonoSourceChannel = "None",
 
     [int]$CrossbarPin = 2,
 
@@ -306,10 +311,18 @@ $thresholdText = $SilenceThresholdDb.ToString(
     [Globalization.CultureInfo]::InvariantCulture
 )
 
-$audioFilter = @(
-    "silencedetect=n=${thresholdText}dB:d=2"
-    "aresample=async=1:first_pts=0"
-) -join ","
+$audioFilterParts = @()
+
+if ($MonoSourceChannel -eq "Left") {
+    $audioFilterParts += "pan=stereo|c0=c0|c1=c0"
+}
+elseif ($MonoSourceChannel -eq "Right") {
+    $audioFilterParts += "pan=stereo|c0=c1|c1=c1"
+}
+
+$audioFilterParts += "silencedetect=n=${thresholdText}dB:d=2"
+$audioFilterParts += "aresample=async=1:first_pts=0"
+$audioFilter = $audioFilterParts -join ","
 
 $ffmpegArguments = @(
     "-hide_banner"
@@ -382,6 +395,9 @@ Write-Host ""
 Write-Host "Dazzle Capture"
 Write-Host "Video: $VideoDevice"
 Write-Host "Audio: $AudioDevice"
+if ($MonoSourceChannel -ne "None") {
+    Write-Host "Mono source channel: $MonoSourceChannel (duplicated to stereo)"
+}
 Write-Host "Output: $outputFile"
 Write-Host "Log: $logFile"
 if ($tapeLabelSuffix) {

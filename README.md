@@ -75,6 +75,25 @@ By default the script writes to `F:\DazzleCapture\master`:
 It captures PAL video as deinterlaced 50 fps H.264 with AAC stereo audio.
 Press **Q** to finish a capture cleanly.
 
+### Mono tapes captured on one channel
+
+Some mono VHS recordings may arrive from the capture device as a two-channel
+stream with programme audio present only on the left or right channel. Use
+`-MonoSourceChannel Left` or `-MonoSourceChannel Right` to duplicate that source
+channel to both channels of the AAC stereo output.
+
+For example, if the programme audio is present only on the right channel:
+
+```powershell
+.\capture-dazzle.ps1 `
+  -TapeLabel 'VHS1' `
+  -ContentDescription 'Margherita Pesciolino 1o anno di scuola materna 99/00' `
+  -MonoSourceChannel Right
+```
+
+The default is `-MonoSourceChannel None`, which leaves normal stereo captures
+unchanged.
+
 ### Automatic stop defaults
 
 The capture stops after **two continuous minutes** of a black or frozen picture

@@ -59,7 +59,13 @@ param(
     [int]$Crf = 22,
 
     [ValidateSet("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")]
-    [string]$Preset = "medium"
+    [string]$Preset = "medium",
+
+    # Do not force a constant output frame rate while capturing analogue video.
+    # DirectShow timestamps can vary slightly; CFR makes FFmpeg compensate by
+    # inserting or discarding pictures. Matroska supports the original timing.
+    [ValidateSet("Passthrough", "Cfr")]
+    [string]$VideoFrameRateMode = "Passthrough"
 )
 
 Set-StrictMode -Version Latest
@@ -381,7 +387,7 @@ $ffmpegArguments = @(
     "-af"
     $audioFilter
     "-fps_mode"
-    "cfr"
+    $VideoFrameRateMode.ToLowerInvariant()
     $outputFile
 )
 
@@ -416,6 +422,7 @@ Write-Host "Maximum duration: $MaxDuration"
 Write-Host "Automatic stop after: $NoSignalDuration"
 Write-Host "Also require silence: $RequireSilence"
 Write-Host "Signal profile: $SignalProfile"
+Write-Host "Video frame-rate mode: $VideoFrameRateMode"
 Write-Host "Shut down computer on completion: $ShutdownOnCompletion"
 Write-Host ""
 Write-Host "Stop condition:"
@@ -780,6 +787,14 @@ if ($exitCode -ne 0) {
 Write-Host ""
 Write-Host "Capture completed:"
 Write-Host $outputFile
+
+$frameSyncSummary = "Frame-rate mode: $VideoFrameRateMode; FFmpeg sync corrections: duplicated=$duplicatedFrames, dropped=$droppedFrames"
+Add-Content -LiteralPath $logFile -Value $frameSyncSummary
+Write-Host $frameSyncSummary
+
+if ($VideoFrameRateMode -eq "Cfr" -and ($duplicatedFrames -gt 0 -or $droppedFrames -gt 0)) {
+    Write-Warning "CFR corrected frame timing. Use the default -VideoFrameRateMode Passthrough for analogue sources with visible stale-frame flashes."
+}
 
 if ($stopReason) {
     Write-Host "Stop reason: $stopReason"

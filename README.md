@@ -72,8 +72,36 @@ By default the script writes to `F:\DazzleCapture\master`:
 - matching capture log
 - `index.txt`, containing the label and description
 
-It captures PAL video as deinterlaced 50 fps H.264 with AAC stereo audio.
-Press **Q** to finish a capture cleanly.
+It deinterlaces PAL fields to 50 fps H.264 with AAC stereo audio. By default it
+preserves the timestamps received from the Dazzle (`Passthrough`) instead of
+forcing a constant frame rate: this prevents FFmpeg from creating or removing
+frames to compensate for minor analogue/DirectShow timing variation. Matroska
+supports this variable timing. Press **Q** to finish a capture cleanly.
+
+### Video timing
+
+`-VideoFrameRateMode Passthrough` is the default and is the correct choice for
+analogue captures. At the end of a capture, the script writes the selected mode
+and FFmpeg's duplicated/dropped-frame counters both on screen and in its log.
+
+`-VideoFrameRateMode Cfr` retains the old constant-frame-rate behaviour only
+for compatibility. It can make FFmpeg duplicate or discard pictures when the
+Dazzle timestamps drift, so do not use it for a tape that shows brief flashes of
+an earlier image.
+
+For a targeted test, cue the tape to a known problematic passage and capture a
+short section with the default mode:
+
+```powershell
+.\capture-dazzle.ps1 `
+  -TapeLabel 'VHS1-timing-test' `
+  -ContentDescription 'Timing test near 00:04:19' `
+  -SignalProfile VHS
+```
+
+The test is successful when the playback no longer shows the flash and the
+completed log reports `duplicated=0, dropped=0` (or values close to zero without
+visible faults).
 
 ### Mono tapes captured on one channel
 

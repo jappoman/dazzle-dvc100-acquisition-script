@@ -62,13 +62,13 @@ Capture a labelled tape:
 
 ```powershell
 .\capture-dazzle.ps1 `
-  -TapeLabel 'C32' `
-  -ContentDescription 'Kenya, March 2001'
+  -TapeLabel 'TAPE001' `
+  -ContentDescription 'Example recording'
 ```
 
 By default the script writes to `F:\DazzleCapture\master`:
 
-- `dazzle-capture-YYYY-MM-DD_HH-mm-ss - C32.mkv`
+- `dazzle-capture-YYYY-MM-DD_HH-mm-ss - TAPE001.mkv`
 - matching capture log
 - `index.txt`, containing the label and description
 
@@ -80,8 +80,8 @@ supports this variable timing. Press **Q** to finish a capture cleanly.
 
 ### Video timing
 
-`-VideoFrameRateMode Passthrough` is the default and is the correct choice for
-analogue captures. At the end of a capture, the script writes the selected mode
+`-VideoFrameRateMode Passthrough` is the default. It does not repair corrupted
+input images. At the end of a capture, the script writes the selected mode
 and FFmpeg's duplicated/dropped-frame counters both on screen and in its log.
 
 `-VideoFrameRateMode Cfr` retains the old constant-frame-rate behaviour only
@@ -94,14 +94,19 @@ short section with the default mode:
 
 ```powershell
 .\capture-dazzle.ps1 `
-  -TapeLabel 'VHS1-timing-test' `
-  -ContentDescription 'Timing test near 00:04:19' `
+  -TapeLabel 'timing-test' `
+  -ContentDescription 'Short test of a problematic passage' `
   -SignalProfile VHS
 ```
 
-The test is successful when the playback no longer shows the flash and the
-completed log reports `duplicated=0, dropped=0` (or values close to zero without
-visible faults).
+Zero duplicated/dropped counters alone do not establish success. Check playback,
+timestamp warnings, and audio/video sync.
+
+For a diagnostic retry, add `-VideoTimestampSource Wallclock`. This sets the
+DirectShow input option `-use_video_device_timestamps false`, using the PC clock
+for video timestamps instead of device timestamps. `Device` remains the default.
+The selected source is printed and saved in the completed capture log. This is
+an unverified workaround, not a confirmed fix; see `docs/temporal-flashes.md`.
 
 ### Mono tapes captured on one channel
 
@@ -114,8 +119,8 @@ For example, if the programme audio is present only on the right channel:
 
 ```powershell
 .\capture-dazzle.ps1 `
-  -TapeLabel 'VHS1' `
-  -ContentDescription 'Margherita Pesciolino 1o anno di scuola materna 99/00' `
+  -TapeLabel 'TAPE001' `
+  -ContentDescription 'Example mono recording' `
   -MonoSourceChannel Right
 ```
 
@@ -167,6 +172,11 @@ It never edits, renames, or deletes an input MKV. For each capture it:
 - writes a client-facing `catalogo-cassette.csv` with file name, content
   description, and final duration.
 
+Delivery copies use only the tape label as their name (`TAPE001.mkv`).
+Descriptions come from `master/index.txt`, accepting either the original capture
+basename or the label as its key. Duplicate output labels are rejected before
+processing. Master files keep their original names.
+
 Use the same profile used for acquisition. `Hi8` is the default; use this for
 VHS masters with noisy end-of-tape signal:
 
@@ -199,15 +209,24 @@ The resulting structure is deliberately client-friendly:
 
 ```text
 F:\DazzleCapture\
-  dazzle-capture-... - C32.mkv
+  TAPE001.mkv
   catalogo-cassette.csv
   master\
-    dazzle-capture-... - C32.mkv
-    dazzle-capture-... - C32.log
+    dazzle-capture-... - TAPE001.mkv
+    dazzle-capture-... - TAPE001.log
     index.txt
 ```
 
 ## Troubleshooting
+
+For brief returns to earlier images, see [Temporal flashes](docs/temporal-flashes.md).
+The guide covers diagnosis, content-based detection, review and repair while
+preserving duration and copying original audio. The optional repair tools support
+uniform 50 fps recordings and require a fresh analysis of each source.
+
+Repository layout: capture/finalisation scripts are at the root; specialised
+repair and diagnostic tools are under `tools/`; reusable guides are under `docs/`.
+Keep recordings, case reports and analysis caches outside versioned documentation.
 
 - No picture: check the analogue connection and use `-CrossbarPin 2` for
   S-Video.

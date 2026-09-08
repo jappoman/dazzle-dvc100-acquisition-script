@@ -58,6 +58,30 @@ if ($outputExists) {
 $files = @(Get-ChildItem -LiteralPath $input.FullName -File -Filter '*.mkv' | Sort-Object Name)
 if ($files.Count -eq 0) { throw "No MKV files found in $($input.FullName)" }
 
+function Get-FinalFileName {
+    param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File)
+    $label = $File.BaseName
+    if ($label -match '^dazzle-capture-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2} - (?<label>.+)$') {
+        $label = $Matches.label.Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($label) -or $label.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or
+        $label -match '[. ]$' -or $label -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)') {
+        throw "Invalid tape label for output filename: $label"
+    }
+    return "$label.mkv"
+}
+
+# Detect repeated labels before scanning or writing any video. Never overwrite
+# one capture with another continuation carrying the same tape label.
+$finalNames = @{}
+$seenNames = @{}
+foreach ($file in $files) {
+    $name = Get-FinalFileName -File $file
+    if ($seenNames.ContainsKey($name)) { throw "Multiple captures have output label '$name'; select or combine them explicitly first." }
+    $seenNames[$name] = $true
+    $finalNames[$file.FullName] = $name
+}
+
 function Convert-ToFfmpegSeconds {
     param([Parameter(Mandatory = $true)][double]$Value)
     return $Value.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
@@ -246,7 +270,7 @@ function Get-IndexDescriptions {
     $path = Join-Path $Directory 'index.txt'
     $entries = @{}
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $entries }
-    foreach ($line in Get-Content -LiteralPath $path) {
+    foreach ($line in Get-Content -LiteralPath $path -Encoding UTF8) {
         $columns = $line -split "`t", 2
         if ($columns.Count -gt 1) { $entries[$columns[0].Trim()] = $columns[1].Trim() }
     }
@@ -295,7 +319,8 @@ try {
         }
         if ($segments.Count -eq 0) { throw "No output segments planned for $($file.Name)" }
 
-        $destination = Join-Path $OutputDirectory $file.Name
+        $finalName = $finalNames[$file.FullName]
+        $destination = Join-Path $OutputDirectory $finalName
         if ($segments.Count -eq 1) {
             New-StreamCopySegment -Source $file.FullName -Start $segments[0].Start -End $segments[0].End -Destination $destination
         } else {
@@ -312,8 +337,12 @@ try {
         $finalDuration = Get-DurationSeconds -File (Get-Item -LiteralPath $destination)
         $time = [TimeSpan]::FromSeconds([Math]::Round($finalDuration))
         $catalogue.Add([pscustomobject][ordered]@{
-            File = $file.Name
-            Contenuto = if ($descriptions.ContainsKey($file.BaseName)) { $descriptions[$file.BaseName] } else { '' }
+            File = $finalName
+            Contenuto = if ($descriptions.ContainsKey($file.BaseName)) {
+                $descriptions[$file.BaseName]
+            } elseif ($descriptions.ContainsKey([IO.Path]::GetFileNameWithoutExtension($finalName))) {
+                $descriptions[[IO.Path]::GetFileNameWithoutExtension($finalName)]
+            } else { '' }
             Durata = ('{0:D2}:{1:D2}:{2:D2}' -f $time.Hours, $time.Minutes, $time.Seconds)
         })
     }

@@ -65,7 +65,11 @@ param(
     # DirectShow timestamps can vary slightly; CFR makes FFmpeg compensate by
     # inserting or discarding pictures. Matroska supports the original timing.
     [ValidateSet("Passthrough", "Cfr")]
-    [string]$VideoFrameRateMode = "Passthrough"
+    [string]$VideoFrameRateMode = "Passthrough",
+
+    # Diagnostic alternative for invalid video timestamps supplied by the driver.
+    [ValidateSet("Device", "Wallclock")]
+    [string]$VideoTimestampSource = "Device"
 )
 
 Set-StrictMode -Version Latest
@@ -358,6 +362,8 @@ $ffmpegArguments = @(
     "720x576"
     "-framerate"
     "25"
+    "-use_video_device_timestamps"
+    $(if ($VideoTimestampSource -eq "Device") { "true" } else { "false" })
     "-i"
     "video=$VideoDevice`:audio=$AudioDevice"
     "-t"
@@ -423,6 +429,7 @@ Write-Host "Automatic stop after: $NoSignalDuration"
 Write-Host "Also require silence: $RequireSilence"
 Write-Host "Signal profile: $SignalProfile"
 Write-Host "Video frame-rate mode: $VideoFrameRateMode"
+Write-Host "Video timestamp source: $VideoTimestampSource"
 Write-Host "Shut down computer on completion: $ShutdownOnCompletion"
 Write-Host ""
 Write-Host "Stop condition:"
@@ -791,9 +798,12 @@ Write-Host $outputFile
 $frameSyncSummary = "Frame-rate mode: $VideoFrameRateMode; FFmpeg sync corrections: duplicated=$duplicatedFrames, dropped=$droppedFrames"
 Add-Content -LiteralPath $logFile -Value $frameSyncSummary
 Write-Host $frameSyncSummary
+$timestampSummary = "Video timestamp source: $VideoTimestampSource"
+Add-Content -LiteralPath $logFile -Value $timestampSummary
+Write-Host $timestampSummary
 
 if ($VideoFrameRateMode -eq "Cfr" -and ($duplicatedFrames -gt 0 -or $droppedFrames -gt 0)) {
-    Write-Warning "CFR corrected frame timing. Use the default -VideoFrameRateMode Passthrough for analogue sources with visible stale-frame flashes."
+    Write-Warning "CFR corrected frame timing. Inspect playback and timestamp warnings; zero sync corrections in Passthrough do not guarantee clean video."
 }
 
 if ($stopReason) {

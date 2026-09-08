@@ -6,3 +6,9 @@
 /*.log
 /index.txt
 /catalogo-cassette.csv
+
+# Local recordings, analysis reports and temporary work are not project sources.
+/repairs/
+/diagnostics/
+/staging/
+/docs/analyses/

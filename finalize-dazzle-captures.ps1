@@ -9,7 +9,24 @@ param(
     [int]$MinimumBlackSeconds = 10,
 
     [ValidateRange(1, 60)]
-    [int]$KeepBlackSeconds = 5
+    [int]$KeepBlackSeconds = 5,
+
+    [ValidateSet('Hi8', 'VHS')]
+    [string]$SignalProfile = 'Hi8',
+
+    [double]$SilenceThresholdDb = -20,
+
+    [ValidateRange(1, 30)]
+    [int]$VhsMergeSilenceGapSeconds = 5,
+
+    [ValidateRange(10, 120)]
+    [int]$VhsEvidenceWindowSeconds = 30,
+
+    [ValidateRange(0.1, 1.0)]
+    [double]$VhsMinimumBlackRatio = 0.4,
+
+    [ValidateRange(0, 120)]
+    [int]$VhsSilenceLeadInSeconds = 45
 )
 
 Set-StrictMode -Version Latest
@@ -53,7 +70,7 @@ function Get-DurationSeconds {
     return [double]::Parse($value, [Globalization.CultureInfo]::InvariantCulture)
 }
 
-function Get-BlackRuns {
+function Get-BlackSamples {
     param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File)
 
     # One sample per second makes the decision reliable for multi-second tape
@@ -68,21 +85,132 @@ function Get-BlackRuns {
             $timestamps.Add([double]::Parse($Matches.value, [Globalization.CultureInfo]::InvariantCulture))
         }
     }
-    if ($timestamps.Count -eq 0) { return @() }
+    return @($timestamps | Sort-Object -Unique)
+}
 
-    $timestamps = @($timestamps | Sort-Object -Unique)
+function Convert-BlackSamplesToRuns {
+    param([Parameter(Mandatory = $true)][double[]]$Samples)
+    if ($Samples.Count -eq 0) { return @() }
+
     $runs = [System.Collections.Generic.List[object]]::new()
-    $start = $timestamps[0]
-    $last = $timestamps[0]
-    for ($position = 1; $position -lt $timestamps.Count; $position++) {
-        if (($timestamps[$position] - $last) -gt 2.5) {
+    $start = $Samples[0]
+    $last = $Samples[0]
+    for ($position = 1; $position -lt $Samples.Count; $position++) {
+        if (($Samples[$position] - $last) -gt 2.5) {
             $runs.Add([pscustomobject]@{ Start = $start; End = $last; Seconds = $last - $start + 1 })
-            $start = $timestamps[$position]
+            $start = $Samples[$position]
         }
-        $last = $timestamps[$position]
+        $last = $Samples[$position]
     }
     $runs.Add([pscustomobject]@{ Start = $start; End = $last; Seconds = $last - $start + 1 })
     return @($runs)
+}
+
+function Get-SilenceRuns {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.FileInfo]$File,
+        [Parameter(Mandatory = $true)][double]$Duration
+    )
+
+    $threshold = $SilenceThresholdDb.ToString([Globalization.CultureInfo]::InvariantCulture)
+    # FFmpeg writes silencedetect metadata to stderr. Temporarily allow that
+    # informational stream to be collected instead of letting StrictMode turn
+    # it into a PowerShell NativeCommandError.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & ffmpeg -hide_banner -v info -i $File.FullName -vn `
+            -af "silencedetect=n=${threshold}dB:d=2" -f null NUL 2>&1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Audio silence scan failed: $($File.Name)" }
+
+    $runs = [System.Collections.Generic.List[object]]::new()
+    $start = $null
+    foreach ($line in $output) {
+        $text = [string]$line
+        if ($text -match 'silence_start:\s*(?<value>-?\d+(?:\.\d+)?)') {
+            $start = [double]::Parse($Matches.value, [Globalization.CultureInfo]::InvariantCulture)
+        }
+        elseif ($text -match 'silence_end:\s*(?<end>-?\d+(?:\.\d+)?)') {
+            if ($null -ne $start) {
+                $end = [double]::Parse($Matches.end, [Globalization.CultureInfo]::InvariantCulture)
+                $runs.Add([pscustomobject]@{ Start = $start; End = $end; Seconds = $end - $start })
+                $start = $null
+            }
+        }
+    }
+    if ($null -ne $start) {
+        $runs.Add([pscustomobject]@{ Start = $start; End = $Duration; Seconds = $Duration - $start })
+    }
+    return @($runs)
+}
+
+function Merge-Runs {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Runs,
+        [Parameter(Mandatory = $true)][double]$MaximumGapSeconds
+    )
+    if ($Runs.Count -eq 0) { return @() }
+
+    $ordered = @($Runs | Sort-Object Start)
+    $merged = [System.Collections.Generic.List[object]]::new()
+    $start = [double]$ordered[0].Start
+    $end = [double]$ordered[0].End
+    for ($position = 1; $position -lt $ordered.Count; $position++) {
+        if (([double]$ordered[$position].Start - $end) -le $MaximumGapSeconds) {
+            $end = [Math]::Max($end, [double]$ordered[$position].End)
+        }
+        else {
+            $merged.Add([pscustomobject]@{ Start = $start; End = $end; Seconds = $end - $start })
+            $start = [double]$ordered[$position].Start
+            $end = [double]$ordered[$position].End
+        }
+    }
+    $merged.Add([pscustomobject]@{ Start = $start; End = $end; Seconds = $end - $start })
+    return @($merged)
+}
+
+function Get-VhsNoSignalRuns {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.FileInfo]$File,
+        [Parameter(Mandatory = $true)][double]$Duration,
+        [Parameter(Mandatory = $true)][double[]]$BlackSamples
+    )
+
+    # VHS end-of-tape signal is often noisy rather than continuously black.
+    # Require long, nearly continuous silence plus a dense black-frame pattern
+    # somewhere in the same interval. If that pattern appears promptly, retain
+    # the start of silence; otherwise start at the first visual evidence.
+    $silentRuns = Merge-Runs -Runs (Get-SilenceRuns -File $File -Duration $Duration) `
+        -MaximumGapSeconds $VhsMergeSilenceGapSeconds
+    $minimumSamples = [Math]::Ceiling($VhsEvidenceWindowSeconds * $VhsMinimumBlackRatio)
+    $detected = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($silentRun in $silentRuns) {
+        if ($silentRun.Seconds -lt $MinimumBlackSeconds) { continue }
+        $samples = @($BlackSamples | Where-Object { $_ -ge $silentRun.Start -and $_ -le $silentRun.End })
+        if ($samples.Count -eq 0) { continue }
+
+        $left = 0
+        $hasEvidence = $false
+        for ($right = 0; $right -lt $samples.Count; $right++) {
+            while (($samples[$right] - $samples[$left]) -gt $VhsEvidenceWindowSeconds) { $left++ }
+            if (($right - $left + 1) -ge $minimumSamples) { $hasEvidence = $true; break }
+        }
+        if (-not $hasEvidence) { continue }
+
+        $start = if (($samples[0] - $silentRun.Start) -le $VhsSilenceLeadInSeconds) {
+            $silentRun.Start
+        }
+        else {
+            $samples[0]
+        }
+        $detected.Add([pscustomobject]@{ Start = $start; End = $silentRun.End; Seconds = $silentRun.End - $start })
+    }
+    return @(Merge-Runs -Runs $detected.ToArray() -MaximumGapSeconds $VhsMergeSilenceGapSeconds)
 }
 
 function New-StreamCopySegment {
@@ -135,9 +263,15 @@ $catalogue = [System.Collections.Generic.List[object]]::new()
 
 try {
     foreach ($file in $files) {
-        Write-Host "Analysing $($file.Name)"
+        Write-Host "Analysing $($file.Name) ($SignalProfile profile)"
         $duration = Get-DurationSeconds -File $file
-        $runs = @(Get-BlackRuns -File $file | Where-Object { $_.Seconds -ge $MinimumBlackSeconds })
+        $blackSamples = @(Get-BlackSamples -File $file)
+        $runs = if ($SignalProfile -eq 'VHS') {
+            @(Get-VhsNoSignalRuns -File $file -Duration $duration -BlackSamples $blackSamples)
+        }
+        else {
+            @(Convert-BlackSamplesToRuns -Samples $blackSamples | Where-Object { $_.Seconds -ge $MinimumBlackSeconds })
+        }
         $terminalRuns = @($runs | Where-Object { ($duration - $_.End) -le 2.5 })
         $finalRun = if ($terminalRuns.Count) { $terminalRuns[-1] } else { $null }
         $internalRuns = @($runs | Where-Object { $null -eq $finalRun -or $_.Start -ne $finalRun.Start } | Sort-Object Start)

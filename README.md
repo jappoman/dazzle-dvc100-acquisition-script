@@ -75,12 +75,24 @@ By default the script writes to `F:\DazzleCapture\master`:
 It captures PAL video as deinterlaced 50 fps H.264 with AAC stereo audio.
 Press **Q** to finish a capture cleanly.
 
-### Automatic stop defaults
+### Automatic-stop profiles
 
-The capture stops after **two continuous minutes** of a black or frozen picture
-*and* quiet audio. The audio threshold is `-20 dB`, calibrated to treat the
-Dazzle's steady analogue no-signal noise as silence while ordinary programme
-audio remains above it.
+`Hi8` is the default profile. It stops after **two continuous minutes** of a
+continuous black or frozen picture *and* quiet audio. The audio threshold is
+`-20 dB`, calibrated to treat the Dazzle's steady analogue no-signal noise as
+silence while ordinary programme audio remains above it.
+
+For VHS, use the VHS profile:
+
+```powershell
+.\capture-dazzle.ps1 -SignalProfile VHS
+```
+
+VHS end-of-tape signal can pulse between black, static, and loss of sync, so it
+often never becomes a continuous black or frozen image. The VHS profile instead
+requires a persistent dense black/no-signal pattern over a 30-second window,
+plus the same continuous two minutes of quiet audio. It is intentionally an
+explicit profile to avoid applying this more tolerant analogue rule to Hi8.
 
 The independent two-hour maximum remains a safety limit. Useful overrides:
 
@@ -107,6 +119,20 @@ It never edits, renames, or deletes an input MKV. For each capture it:
   nor audio is re-encoded;
 - writes a client-facing `catalogo-cassette.csv` with file name, content
   description, and final duration.
+
+Use the same profile used for acquisition. `Hi8` is the default; use this for
+VHS masters with noisy end-of-tape signal:
+
+```powershell
+.\finalize-dazzle-captures.ps1 `
+  -InputDirectory 'F:\DazzleCapture\master' `
+  -SignalProfile VHS
+```
+
+The VHS finaliser combines long quiet-audio intervals (bridging brief analogue
+noise bursts) with dense intermittent black-frame evidence. It then preserves
+five seconds from the start of the detected no-signal interval, just as it does
+for ordinary Hi8 black runs.
 
 Choose another destination if desired; it must not already exist:
 

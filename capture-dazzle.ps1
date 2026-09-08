@@ -22,6 +22,15 @@ param(
 
     [bool]$RequireSilence = $true,
 
+    [ValidateSet('Hi8', 'VHS')]
+    [string]$SignalProfile = 'Hi8',
+
+    [ValidateRange(10, 120)]
+    [int]$VhsNoSignalWindowSeconds = 30,
+
+    [ValidateRange(0.1, 1.0)]
+    [double]$VhsMinimumBlackRatio = 0.4,
+
     [bool]$NotifyOnCompletion = $true,
 
     [ValidateRange(1, 10)]
@@ -390,10 +399,16 @@ if ($tapeLabelSuffix) {
 Write-Host "Maximum duration: $MaxDuration"
 Write-Host "Automatic stop after: $NoSignalDuration"
 Write-Host "Also require silence: $RequireSilence"
+Write-Host "Signal profile: $SignalProfile"
 Write-Host "Shut down computer on completion: $ShutdownOnCompletion"
 Write-Host ""
 Write-Host "Stop condition:"
-Write-Host "black screen or frozen image for the configured threshold"
+if ($SignalProfile -eq 'VHS') {
+    Write-Host "frozen picture or persistent black/no-signal VHS pattern for the configured threshold"
+}
+else {
+    Write-Host "black screen or frozen image for the configured threshold"
+}
 if ($RequireSilence) {
     Write-Host "and silent audio for the same threshold."
 }
@@ -425,6 +440,8 @@ $droppedFrames = [Int64]0
 $deviceWarningCount = 0
 $blackStart = $null
 $blackLastSeenAt = $null
+$vhsBlackSamples = [System.Collections.Generic.Queue[DateTime]]::new()
+$vhsNoSignalStart = $null
 $freezeStart = $null
 $silenceStart = $null
 $stopReason = $null
@@ -494,6 +511,7 @@ try {
                     }
 
                     $blackLastSeenAt = $now
+                    $vhsBlackSamples.Enqueue($now)
                 }
 
                 if ($line -match 'freeze_start:\s*(?<value>\d+(?:\.\d+)?)') {
@@ -579,10 +597,44 @@ try {
             ($now - $silenceStart).TotalSeconds
         }
 
-        $videoNoSignal = (
+        while (
+            $vhsBlackSamples.Count -gt 0 -and
+            ($now - $vhsBlackSamples.Peek()).TotalSeconds -gt $VhsNoSignalWindowSeconds
+        ) {
+            [void]$vhsBlackSamples.Dequeue()
+        }
+
+        $vhsBlackRatio = $vhsBlackSamples.Count / [double]$VhsNoSignalWindowSeconds
+        $vhsHasRecentBlack = (
+            $null -ne $blackLastSeenAt -and
+            ($now - $blackLastSeenAt).TotalSeconds -le 5
+        )
+        $vhsPatternActive = (
+            $SignalProfile -eq 'VHS' -and
+            $vhsHasRecentBlack -and
+            $vhsBlackRatio -ge $VhsMinimumBlackRatio
+        )
+        if ($vhsPatternActive) {
+            if ($null -eq $vhsNoSignalStart) { $vhsNoSignalStart = $now }
+        }
+        else {
+            $vhsNoSignalStart = $null
+        }
+        $vhsNoSignalElapsed = if ($null -eq $vhsNoSignalStart) {
+            0.0
+        }
+        else {
+            ($now - $vhsNoSignalStart).TotalSeconds
+        }
+
+        $videoNoSignal = if ($SignalProfile -eq 'VHS') {
+            $freezeElapsed -ge $NoSignalDuration.TotalSeconds -or
+            $vhsNoSignalElapsed -ge $NoSignalDuration.TotalSeconds
+        }
+        else {
             $blackElapsed -ge $NoSignalDuration.TotalSeconds -or
             $freezeElapsed -ge $NoSignalDuration.TotalSeconds
-        )
+        }
 
         $audioNoSignal = (
             -not $RequireSilence -or
@@ -598,11 +650,14 @@ try {
             $videoNoSignal -and
             $audioNoSignal
         ) {
-            if ($blackElapsed -ge $NoSignalDuration.TotalSeconds) {
-                $stopReason = "continuous black screen"
+            if ($freezeElapsed -ge $NoSignalDuration.TotalSeconds) {
+                $stopReason = "continuous frozen image"
+            }
+            elseif ($SignalProfile -eq 'VHS') {
+                $stopReason = "persistent VHS no-signal pattern"
             }
             else {
-                $stopReason = "continuous frozen image"
+                $stopReason = "continuous black screen"
             }
 
             if ($RequireSilence) {
@@ -627,7 +682,7 @@ try {
             Write-Progress `
                 -Activity "Dazzle Capture" `
                 -Status (
-                    "Wall {0} | Encoded {1} | {2:N0} frames | Encode {3:N1} fps | Speed {4} | Bitrate {5} | File {6} | Dup {7} | Drop {8} | Device warnings {9} | Black {10:N0}s | Freeze {11:N0}s | Silence {12:N0}s" -f `
+                    "Wall {0} | Encoded {1} | {2:N0} frames | Encode {3:N1} fps | Speed {4} | Bitrate {5} | File {6} | Dup {7} | Drop {8} | Device warnings {9} | Black {10:N0}s | Freeze {11:N0}s | Silence {12:N0}s | VHS signal {13:N0}s ({14:P0})" -f `
                     $elapsed.ToString("hh\:mm\:ss"), `
                     ([TimeSpan]::FromSeconds($encodedSeconds)).ToString("hh\:mm\:ss"), `
                     $encodedFrames, `
@@ -640,7 +695,9 @@ try {
                     $deviceWarningCount, `
                     $blackElapsed, `
                     $freezeElapsed, `
-                    $silenceElapsed
+                    $silenceElapsed, `
+                    $vhsNoSignalElapsed, `
+                    $vhsBlackRatio
                 ) `
                 -PercentComplete (
                     [math]::Min(
